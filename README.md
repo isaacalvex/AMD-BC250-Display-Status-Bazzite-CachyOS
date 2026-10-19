@@ -1,5 +1,9 @@
 # Stellar App Monitor
 
+![Prévia ilustrativa da tela inicial do Stellar App Monitor](docs/stellar-app-monitor-visao-geral.svg)
+
+> Prévia ilustrativa da interface. As temperaturas e os estados exibidos são exemplos; no aplicativo, os valores vêm do sistema.
+
 Aplicativo gráfico para monitoramento de temperaturas da **AMD BC250** no **Bazzite** e **CachyOS**, com configuração de serviço `systemd --user`, seleção de ESP32-C3 e atualização do firmware do display **GC9A01**.
 
 ## Instalação em um comando
