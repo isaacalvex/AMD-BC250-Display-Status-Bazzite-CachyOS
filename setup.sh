@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-REPO_URL="${BC250_REPO_URL:-https://github.com/isaacalvex/AMD-BC250-Display-Status-Bazzite.git}"
+REPO_URL="${BC250_REPO_URL:-https://github.com/isaacalvex/AMD-BC250-Display-Status-BazziteOS.git}"
 INSTALL_DIR="$HOME/.local/share/bc250-display"
 SERVICE_DIR="$HOME/.config/systemd/user"
 SERVICE_NAME="bc250-display.service"
 PYTHON="$INSTALL_DIR/venv/bin/python"
 
 if [[ ${EUID} -eq 0 ]]; then echo 'Execute como usuário normal, sem sudo.' >&2; exit 1; fi
-for cmd in git python3 systemctl; do
+for cmd in git python3 systemctl sensors; do
   command -v "$cmd" >/dev/null || { echo "Comando necessário ausente: $cmd" >&2; exit 1; }
 done
 
