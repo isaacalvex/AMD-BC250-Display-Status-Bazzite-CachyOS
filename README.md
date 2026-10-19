@@ -7,7 +7,7 @@ Aplicativo gráfico para monitoramento de temperaturas da **AMD BC250** no **Baz
 Abra um terminal na sessão gráfica do Linux e execute:
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/isaacalvex/AMD-BC250-Display-Status-BazziteOS/main/install-app.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/isaacalvex/AMD-BC250-Display-Status-Bazzite-CachyOS/main/install-app.sh)"
 ```
 
 O instalador baixa o aplicativo, cria um ambiente Python isolado, instala as bibliotecas, cria um atalho em **Aplicativos** e tenta criar também na **Área de Trabalho**; em seguida abre o Stellar App Monitor. Não execute com `sudo`. É necessário ter Git, Python 3 com `venv`, conexão à Internet e sessão gráfica. Em alguns desktops será necessário escolher **Permitir execução** no atalho.
