@@ -2,17 +2,51 @@
 
 Versão dedicada ao **Bazzite OS** (Fedora Atomic). Instala o monitor serial para ESP32-C3 / GC9A01 como **serviço systemd do usuário**, sem modificar a imagem imutável do sistema.
 
-## Instalação
+## Como instalar o serviço
+
+Abra o terminal do **Bazzite** e execute o comando abaixo para baixar o projeto, entrar na pasta e instalar o serviço:
 
 ```bash
-git clone https://github.com/isaacalvex/AMD-BC250-Display-Status-Bazzite.git
-cd AMD-BC250-Display-Status-Bazzite
-bash setup.sh
+git clone https://github.com/isaacalvex/AMD-BC250-Display-Status-Bazzite.git && cd AMD-BC250-Display-Status-Bazzite && bash setup.sh
 ```
 
-> O link acima só funcionará após a criação do novo repositório e o envio destes arquivos. Não rode scripts de um repositório ainda não publicado.
+> **Atenção:** o comando acima só funcionará depois que este repositório for publicado no GitHub com os arquivos do projeto.
 
-É necessário `git`, `python3` com `venv` e acesso à internet para instalar `pyserial`. O comando `sensors` também precisa estar disponível; teste com `sensors`. O instalador não usa `dnf install` nem modifica pacotes do sistema base.
+O instalador configura um ambiente virtual Python, instala o `pyserial`, cria o serviço `bc250-display.service` e o habilita para iniciar automaticamente **na sessão do usuário**. Não é necessário iniciar o programa manualmente a cada login. A execução antes do login não é garantida.
+
+**Requisitos:** `git`, `python3` com suporte a `venv`, conexão com a internet e o comando `sensors` disponível no sistema. O instalador não usa `dnf install` nem altera os pacotes do sistema base.
+
+### Como iniciar e verificar o serviço
+
+Para iniciar imediatamente (caso não esteja em execução):
+
+```bash
+systemctl --user start bc250-display.service
+```
+
+Para verificar o estado do serviço:
+
+```bash
+systemctl --user status bc250-display.service
+```
+
+Para acompanhar os dados e possíveis erros em tempo real:
+
+```bash
+journalctl --user -u bc250-display.service -f
+```
+
+Para reiniciar o serviço:
+
+```bash
+systemctl --user restart bc250-display.service
+```
+
+Para confirmar que ele iniciará automaticamente nas próximas sessões:
+
+```bash
+systemctl --user is-enabled bc250-display.service
+```
 
 ## Firmware
 
