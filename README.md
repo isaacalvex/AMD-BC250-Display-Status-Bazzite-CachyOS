@@ -23,8 +23,9 @@ O instalador baixa o aplicativo, cria um ambiente Python isolado, instala as bib
 - **Dispositivos USB:** escolher porta e testar comunicação/permissões.
 - **Firmware:** atualizar o ESP32-C3 com uma confirmação e indicador percentual, sem selecionar manualmente o arquivo.
 - **Diagnóstico:** registros do serviço e testes dos sensores.
+- **Atualizações:** clique **ATUALIZAR** para baixar a versão mais recente do GitHub com progresso percentual; depois **APLICAR ATUALIZAÇÃO** para instalar, atualizar dependências e reiniciar automaticamente o aplicativo.
 
-Logs de cada operação ficam visíveis na parte inferior em todas as páginas.
+Logs de cada operação ficam visíveis na parte inferior em todas as páginas. A tela inicial apresenta um cometa no logotipo e gráficos translúcidos de temperatura com histórico em tempo real atrás dos valores de CPU e GPU.
 
 ## Preparar monitoramento
 
@@ -45,3 +46,7 @@ O firmware é destinado à pinagem do projeto original (MOSI 7, SCLK 6, CS 10, D
 ## Capturas de tela
 
 Capturas reais dependem da execução no hardware e serão adicionadas após validação no CachyOS/Bazzite. O código e o fluxo de instalação foram preparados; os testes de gravação em diferentes placas ainda não foram concluídos.
+
+## Atualizar o aplicativo
+
+Abra **Atualizações** no menu lateral. Clique em **ATUALIZAR** para consultar e baixar as alterações do repositório oficial. Depois clique em **APLICAR ATUALIZAÇÃO**. O app instala os novos arquivos, atualiza as bibliotecas Python do ambiente virtual e reinicia automaticamente. O progresso de transferência usa a porcentagem informada pelo Git; outras etapas aparecem em texto e nos logs, sem porcentagens artificiais. O recurso exige instalação pelo script oficial (que cria o clone Git) e rejeita atualizações com alterações locais ou histórico divergente.
