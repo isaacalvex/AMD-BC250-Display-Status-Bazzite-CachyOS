@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
-REPO="https://github.com/isaacalvex/AMD-BC250-Display-Status-BazziteOS.git"
+REPO="https://github.com/isaacalvex/AMD-BC250-Display-Status-Bazzite-CachyOS.git"
 DIR="${XDG_DATA_HOME:-$HOME/.local/share}/stellar-app-monitor"
 echo "[Stellar] Instalando Stellar App Monitor..."
 [[ "$EUID" -ne 0 ]] || { echo "Execute SEM sudo."; exit 1; }
