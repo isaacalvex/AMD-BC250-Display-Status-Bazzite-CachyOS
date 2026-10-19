@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Stellar App Monitor — PySide6 desktop client for AMD BC250 / ESP32-C3."""
-import os, sys, re, glob, time, subprocess, threading, urllib.request
+import os, sys, re, glob, time, subprocess, threading, urllib.request, collections
 from pathlib import Path
 from datetime import datetime
-from PySide6.QtCore import Qt, QObject, Signal, QTimer, QThread
+from PySide6.QtCore import Qt, QObject, Signal, QTimer, QThread, QRectF, QPointF
+from PySide6.QtGui import QPainter, QColor, QPen, QPainterPath, QLinearGradient, QFont
 from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QHBoxLayout,QVBoxLayout,QGridLayout,QPushButton,
  QLabel,QPlainTextEdit,QComboBox,QStackedWidget,QFrame,QProgressBar,QMessageBox,QGroupBox)
 
@@ -48,6 +49,85 @@ class Job(QThread):
         rc,out=command(list(map(str,argv)),timeout)
         if out:self.emit(out[-2500:])
         if rc:raise RuntimeError(f'Comando retornou código {rc}: {out[-400:]}')
+class CometBrand(QWidget):
+    """Identidade STELLAR: cometa ao fundo do lettering, sem caixa azul."""
+    def __init__(self):
+        super().__init__()
+        self.setFixedHeight(113)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+
+    def paintEvent(self, event):
+        p=QPainter(self);p.setRenderHint(QPainter.Antialiasing)
+        p.setPen(Qt.NoPen)
+        for offset,alpha,width in [(0,75,3),(6,125,2),(11,185,2)]:
+            path=QPainterPath(QPointF(20,62+offset))
+            path.cubicTo(56,22+offset,105,20+offset,167,15)
+            pen=QPen(QColor(23,180,244,alpha),width)
+            p.setPen(pen);p.drawPath(path)
+        p.setPen(Qt.NoPen);p.setBrush(QColor('#4bdcff'))
+        p.drawEllipse(QPointF(168,15),7,7)
+        p.setPen(QColor('#f6fbff'));font=QFont('Noto Sans',21,QFont.Bold)
+        p.setFont(font);p.drawText(QRectF(26,40,180,46),Qt.AlignCenter,'STELLAR')
+        p.setPen(QColor('#9bbde1'));p.setFont(QFont('Noto Sans',11))
+        p.drawText(QRectF(26,77,180,26),Qt.AlignCenter,'App Monitor')
+        p.end()
+
+
+class TemperatureCard(QWidget):
+    """Gráfico translúcido renderizado atrás do valor, sem dependências gráficas extras."""
+    def __init__(self,label,tint):
+        super().__init__()
+        self.label=label
+        self.tint=QColor(tint)
+        self.samples=collections.deque(maxlen=50)
+        self.value=None
+        self.setMinimumHeight(188)
+
+    def update_reading(self,value,label):
+        self.value=value
+        self.label=label
+        self.samples.append(value)
+        self.update()
+
+    def paintEvent(self,event):
+        p=QPainter(self);p.setRenderHint(QPainter.Antialiasing)
+        rect=QRectF(self.rect()).adjusted(1,1,-1,-1)
+        p.setPen(QPen(self.tint,1))
+        p.setBrush(QColor('#112a42' if self.tint.blue()>self.tint.green() else '#103132'))
+        p.drawRoundedRect(rect,13,13)
+        graph=QRectF(24,52,self.width()-48,self.height()-71)
+        for y in [0.25,0.5,0.75]:
+            p.setPen(QPen(QColor(127,177,207,18),1,Qt.DashLine))
+            p.drawLine(QPointF(graph.left(),graph.top()+graph.height()*y),
+                       QPointF(graph.right(),graph.top()+graph.height()*y))
+        valid=[v for v in self.samples if v is not None]
+        if len(valid)>=2:
+            bottom=max(0,min(valid)-12);top=max(bottom+25,max(valid)+12)
+            points=[]
+            for i,v in enumerate(self.samples):
+                if v is None: continue
+                x=graph.left()+i/max(1,len(self.samples)-1)*graph.width()
+                y=graph.bottom()-(v-bottom)/(top-bottom)*graph.height()
+                points.append(QPointF(x,y))
+            if len(points)>=2:
+                trace=QPainterPath(points[0])
+                for point in points[1:]:trace.lineTo(point)
+                area=QPainterPath(trace);area.lineTo(points[-1].x(),graph.bottom())
+                area.lineTo(points[0].x(),graph.bottom());area.closeSubpath()
+                grad=QLinearGradient(0,graph.top(),0,graph.bottom())
+                fade=QColor(self.tint);fade.setAlpha(42);grad.setColorAt(0,fade)
+                fade.setAlpha(3);grad.setColorAt(1,fade)
+                p.fillPath(area,grad)
+                faded=QColor(self.tint);faded.setAlpha(90)
+                p.setPen(QPen(faded,2));p.drawPath(trace)
+        p.setPen(QColor('#bed8e9'));p.setFont(QFont('Noto Sans',11,QFont.DemiBold))
+        p.drawText(QRectF(22,14,self.width()-44,28),Qt.AlignLeft|Qt.AlignVCenter,self.label)
+        p.setPen(QColor('#2ce1fb'));p.setFont(QFont('Noto Sans',31,QFont.Bold))
+        shown=(f'{self.value:.1f} °C'.replace('.',',') if self.value is not None else 'Indisponível')
+        p.drawText(QRectF(15,62,self.width()-30,self.height()-78),Qt.AlignCenter,shown)
+        p.end()
+
+
 class Window(QMainWindow):
  def __init__(self):
     super().__init__()
@@ -57,10 +137,9 @@ class Window(QMainWindow):
     full=QHBoxLayout(center);full.setContentsMargins(0,0,0,0);full.setSpacing(0)
     sidebar=QFrame();sidebar.setObjectName('side');sidebar.setFixedWidth(230)
     nav=QVBoxLayout(sidebar);nav.setContentsMargins(14,25,14,18);nav.setSpacing(10)
-    title=QLabel('★  STELLAR');title.setObjectName('brand');nav.addWidget(title)
-    nav.addWidget(QLabel('App Monitor'));nav.addSpacing(17)
+    nav.addWidget(CometBrand());nav.addSpacing(7)
     self.stack=QStackedWidget();self.nav=[]
-    labels=[('⌂','Visão geral'),('⚙','Serviço'),('⌁','Dispositivos USB'),('⇧','Firmware'),('≡','Diagnóstico')]
+    labels=[('⌂','Visão geral'),('⚙','Serviço'),('⌁','Dispositivos USB'),('⇧','Firmware'),('≡','Diagnóstico'),('↻','Atualizações')]
     for idx,(ico,name) in enumerate(labels):
         b=QPushButton(f'{ico}   {name}');b.setObjectName('nav');b.setCheckable(True)
         b.clicked.connect(lambda _,i=idx:self.page(i));nav.addWidget(b);self.nav.append(b)
@@ -72,7 +151,7 @@ class Window(QMainWindow):
     self.logs=QPlainTextEdit();self.logs.setReadOnly(True);self.logs.setMaximumBlockCount(500)
     self.logs.setFixedHeight(116);ll.addWidget(self.logs);column.addWidget(logsbox)
     full.addWidget(sidebar);full.addWidget(main,1)
-    self.build_overview();self.build_service();self.build_usb();self.build_firmware();self.build_diagnostics()
+    self.build_overview();self.build_service();self.build_usb();self.build_firmware();self.build_diagnostics();self.build_updates()
     self.setStyleSheet("""
       QMainWindow,QWidget { background:#0c192b; color:#e8f1fb; font:13px 'Noto Sans'; }
       QFrame#side { background:#13243a;border-right:1px solid #25405c; }
@@ -97,7 +176,7 @@ class Window(QMainWindow):
  def log(self,msg):self.logs.appendPlainText(f"[{datetime.now():%H:%M:%S}] {msg}")
  def page(self,index):
     self.stack.setCurrentIndex(index)
-    self.header.setText(['Visão geral','Serviço','Dispositivos USB','Firmware','Diagnóstico'][index])
+    self.header.setText(['Visão geral','Serviço','Dispositivos USB','Firmware','Diagnóstico','Atualizações'][index])
     for i,b in enumerate(self.nav):b.setChecked(i==index)
     if index==4:self.diagnose()
  def panel(self,lay,name):
@@ -110,16 +189,9 @@ class Window(QMainWindow):
     intro.setStyleSheet('color:#91b2d2;font-size:12px;')
     lay.addWidget(intro)
     row=QHBoxLayout();row.setSpacing(12)
-    self.temp_cpu=QLabel('— °C');self.temp_gpu=QLabel('— °C')
-    self.cpu_source=QLabel('CPU · Tctl / k10temp')
-    self.gpu_source=QLabel('GPU · AMDGPU edge')
-    for source,value,border in [(self.cpu_source,self.temp_cpu,'#277cc1'),(self.gpu_source,self.temp_gpu,'#168d78')]:
-        card=QFrame()
-        card.setStyleSheet('QFrame{background:#142a42;border:1px solid '+border+';border-radius:13px;} QLabel{border:0;background:transparent;}')
-        content=QVBoxLayout(card);content.setContentsMargins(20,14,15,14);content.setSpacing(7)
-        source.setStyleSheet('color:#cfdeed;font-weight:700;font-size:14px;')
-        value.setStyleSheet('color:#28d6f8;font-size:40px;font-weight:800;')
-        content.addWidget(source);content.addWidget(value);row.addWidget(card,1)
+    self.temp_cpu=TemperatureCard('CPU · Tctl / k10temp','#1bbdf7')
+    self.temp_gpu=TemperatureCard('GPU · AMDGPU edge','#16dbab')
+    row.addWidget(self.temp_cpu,1);row.addWidget(self.temp_gpu,1)
     lay.addLayout(row)
     heading=QLabel('Status geral do sistema');heading.setStyleSheet('font-size:19px;font-weight:800;color:#f4f8fd;')
     lay.addWidget(heading)
@@ -173,11 +245,106 @@ class Window(QMainWindow):
     self.diag=QPlainTextEdit();self.diag.setReadOnly(True);box.addWidget(self.diag)
     self.button(box,'Exibir logs recentes do serviço',self.service_logs)
     lay.addStretch();self.stack.addWidget(w)
+ def build_updates(self):
+    w=QWidget();layout=QVBoxLayout(w);layout.setContentsMargins(0,0,0,0);layout.setSpacing(15)
+    info=self.panel(layout,'Atualização do Stellar App Monitor')
+    desc=QLabel('Baixe as alterações oficiais do GitHub. Depois aplique a atualização e reinicie o aplicativo.')
+    desc.setWordWrap(True);info.addWidget(desc)
+    self.update_label=QLabel('Nenhuma atualização verificada nesta sessão.')
+    info.addWidget(self.update_label)
+    row=QHBoxLayout()
+    self.fetch_button=self.button(row,'ATUALIZAR',self.fetch_update)
+    self.apply_button=self.button(row,'APLICAR ATUALIZAÇÃO',self.apply_update)
+    self.apply_button.setEnabled(False);info.addLayout(row)
+    self.update_progress=QProgressBar();self.update_progress.setRange(0,100)
+    self.update_progress.setValue(0);info.addWidget(self.update_progress)
+    foot=QLabel('Durante o download, a porcentagem segue o progresso real informado pelo Git. A instalação de dependências mostra suas etapas nos logs.')
+    foot.setWordWrap(True);info.addWidget(foot)
+    layout.addStretch();self.stack.addWidget(w)
+
+ def fetch_update(self):
+    if self.job and self.job.isRunning():
+        self.error('Atualização','Outra operação está em andamento.');return
+    if not (BASE/'.git').is_dir():
+        self.error('Atualização','Instalação sem Git. Reinstale pelo comando oficial do README.');return
+    rc,dirty=command(['git','-C',str(BASE),'status','--porcelain'],15)
+    if rc or dirty:
+        self.error('Atualização','Existem alterações locais ou não foi possível verificar o Git. Atualização automática bloqueada para preservar os arquivos.')
+        return
+    self.fetch_button.setEnabled(False);self.apply_button.setEnabled(False)
+    self.update_progress.setValue(0);self.update_label.setText('Baixando atualização...')
+    def task(j):
+        argv=['git','-C',str(BASE),'fetch','--progress','origin','main']
+        j.emit('Baixando atualizações de origem confiável: GitHub oficial.')
+        p=subprocess.Popen(argv,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,bufsize=0)
+        buf=''
+        while True:
+            byte=p.stdout.read(1)
+            if not byte:break
+            char=byte.decode('utf-8','replace')
+            if char in '\r\n':
+                if buf.strip():
+                    j.emit(buf.strip()[-220:])
+                    matches=re.findall(r'(?:Receiving objects|Resolving deltas):\s*(\d+)%',buf)
+                    if matches:j.progress.emit(min(95,int(matches[-1])))
+                buf=''
+            else:buf=(buf+char)[-700:]
+        if p.wait()!=0:raise RuntimeError('Falha ao baixar atualização do GitHub.')
+        j.progress.emit(100)
+        rc,head=command(['git','-C',str(BASE),'rev-parse','HEAD'],10)
+        rc,remote=command(['git','-C',str(BASE),'rev-parse','FETCH_HEAD'],10)
+        if head==remote:j.emit('O Stellar App Monitor já está na versão mais recente.')
+        else:
+            rc,out=command(['git','-C',str(BASE),'merge-base','--is-ancestor',head,remote],10)
+            if rc:raise RuntimeError('Histórico Git divergente; atualização automática não segura.')
+            j.emit('Atualização disponível: '+remote[:10])
+    def finished(ok,msg):
+        self.fetch_button.setEnabled(True)
+        if not ok:
+            self.update_label.setText('Erro no download — consulte os logs.')
+            return
+        old=command(['git','-C',str(BASE),'rev-parse','HEAD'],10)[1]
+        new=command(['git','-C',str(BASE),'rev-parse','FETCH_HEAD'],10)[1]
+        can_apply=bool(old and new and old!=new)
+        self.apply_button.setEnabled(can_apply)
+        self.update_label.setText('Atualização disponível — clique Aplicar atualização.' if can_apply else 'Aplicativo atualizado.')
+    self.run_job('Buscar atualização do aplicativo',task,finished,progressbar=self.update_progress)
+
+ def apply_update(self):
+    if self.job and self.job.isRunning():
+        self.error('Atualização','Existe outra operação em andamento.');return
+    if not self.apply_button.isEnabled():return
+    if QMessageBox.question(self,'Aplicar atualização','Instalar a versão baixada e reiniciar o Stellar App Monitor?',QMessageBox.Yes|QMessageBox.No,QMessageBox.No)!=QMessageBox.Yes:return
+    self.apply_button.setEnabled(False);self.fetch_button.setEnabled(False)
+    self.update_label.setText('Aplicando atualização...')
+    def task(j):
+        rc,dirty=command(['git','-C',str(BASE),'status','--porcelain'],15)
+        if rc or dirty:raise RuntimeError('Arquivos locais alterados. Atualização cancelada.')
+        j.emit('Aplicando commit baixado...')
+        j.cmd(['git','-C',str(BASE),'merge','--ff-only','FETCH_HEAD'],60)
+        j.emit('Atualizando dependências Python...')
+        j.cmd([sys.executable,'-m','pip','install','--disable-pip-version-check','-r',str(BASE/'requirements.txt')],240)
+        j.emit('Aplicação concluída. Reiniciando...')
+    def finished(ok,msg):
+        if not ok:
+            self.fetch_button.setEnabled(True)
+            self.update_label.setText('Falha ao aplicar atualização — consulte os logs.')
+            return
+        script=BASE/'abrir-stellar.sh'
+        args=[str(script)] if script.is_file() else [sys.executable,str(BASE/'main.py')]
+        try:
+            subprocess.Popen(args,cwd=str(BASE),start_new_session=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            self.log('Novo processo iniciado; encerrando esta versão.')
+            QApplication.instance().quit()
+        except Exception as e:
+            self.fetch_button.setEnabled(True)
+            self.error('Reinício',str(e))
+    self.run_job('Aplicar atualização do aplicativo',task,finished,progressbar=self.update_progress)
+
  def refresh(self):
     a,an=sensor('k10temp');b,bn=sensor('amdgpu')
-    self.temp_cpu.setText(f'{a:.1f} °C'.replace('.',',') if a is not None else 'Indisponível')
-    self.temp_gpu.setText(f'{b:.1f} °C'.replace('.',',') if b is not None else 'Indisponível')
-    self.cpu_source.setText(f'CPU · {an}');self.gpu_source.setText(f'GPU · {bn}')
+    self.temp_cpu.update_reading(a,f'CPU · {an}')
+    self.temp_gpu.update_reading(b,f'GPU · {bn}')
     exists=UNIT_PATH.exists()
     rc,run=command(['systemctl','--user','is-active',UNIT],5)
     rc,en=command(['systemctl','--user','is-enabled',UNIT],5)
@@ -221,11 +388,11 @@ class Window(QMainWindow):
  def usb_help(self):
     self.log('USB: para corrigir permissão, verifique ls -l /dev/ttyACM0 e os grupos do usuário.')
     QMessageBox.information(self,'Permissão USB','Verifique o grupo proprietário da porta com ls -l /dev/ttyACM0 ou ttyUSB0. Adicione o usuário ao grupo apropriado e entre novamente na sessão. Não use chmod 777.')
- def run_job(self,label,fn,done=None):
+ def run_job(self,label,fn,done=None,progressbar=None):
     if self.job and self.job.isRunning():self.error('Operação em andamento','Conclua a operação anterior.');return
     self.log('Início: '+label)
     self.job=Job(fn);self.job.line.connect(self.log)
-    self.job.progress.connect(lambda value:self.progress.setValue(value))
+    self.job.progress.connect(lambda value:(progressbar or self.progress).setValue(value))
     def complete(ok,msg):
       self.log(('SUCESSO: ' if ok else 'ERRO: ')+label+('' if ok else ' — '+msg))
       if done:done(ok,msg)
