@@ -84,7 +84,7 @@ systemctl --user restart bc250-display.service
 systemctl --user stop bc250-display.service
 ```
 
-**Requisitos:** `git`, `python3` com `venv`, acesso à internet e o comando `sensors` disponível para leitura das temperaturas. O instalador não usa `dnf install` nem altera pacotes da imagem imutável do Bazzite.
+**Requisitos:** `git`, `python3` com `venv`, acesso à internet e sensores de temperatura acessíveis pelo `hwmon` do kernel ou pelo comando `sensors`. O instalador não usa `dnf install` nem altera pacotes da imagem imutável do Bazzite.
 
 ## Firmware
 
@@ -106,7 +106,7 @@ Se ocorrer `Permission denied`, verifique o grupo proprietário da porta com `ls
 
 O ESP32 permanece na animação STELLAR até receber o primeiro pacote válido de CPU e GPU. Depois disso, atualiza aproximadamente a cada segundo. Se ficar mais de 5 segundos sem novos pacotes, volta à animação. O serviço inicia na sessão do usuário (não necessariamente durante o boot, antes do login).
 
-O script **não envia temperaturas simuladas**. CPU usa a leitura `Tctl` de `sensors` e GPU usa hwmon `amdgpu` ou `sensors`. O formato enviado é `CPU:46.6;GPU:44.0` a 115200 baud. Se não houver ambas as leituras, não há pacote.
+O script **não envia temperaturas simuladas**. CPU usa `k10temp` do `hwmon` (quando disponível), com alternativa `Tctl` de `sensors`; GPU usa `hwmon` `amdgpu` ou `sensors`. O formato enviado é `CPU:46.6;GPU:44.0` a 115200 baud. Se não houver ambas as leituras, não há pacote.
 
 ## Atualização
 
@@ -118,3 +118,27 @@ rm -f ~/.config/systemd/user/bc250-display.service
 systemctl --user daemon-reload
 rm -rf ~/.local/share/bc250-display
 ```
+
+### Mais de uma porta serial conectada
+
+Se houver vários dispositivos USB seriais e o monitor conectar no dispositivo errado, escolha explicitamente a porta criando uma configuração no serviço:
+
+```bash
+systemctl --user edit bc250-display.service
+```
+
+Acrescente no editor:
+
+```ini
+[Service]
+Environment=BC250_SERIAL_PORT=/dev/ttyACM0
+```
+
+Substitua a porta pela correta, salve e execute:
+
+```bash
+systemctl --user daemon-reload
+systemctl --user restart bc250-display.service
+```
+
+A porta real pode ser identificada com `ls -l /dev/serial/by-id/`. Prefira um caminho persistente de `/dev/serial/by-id/` quando disponível.
