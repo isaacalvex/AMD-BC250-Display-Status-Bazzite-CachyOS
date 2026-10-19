@@ -6,14 +6,14 @@ Versão dedicada ao **Bazzite OS** (Fedora Atomic). Instala o monitor serial par
 
 Siga os passos abaixo no **terminal do Bazzite**. Não execute os comandos com `sudo`, exceto quando indicado para corrigir permissões.
 
-> **Importante:** o repositório `AMD-BC250-Display-Status-Bazzite` precisa estar publicado no GitHub para que os comandos de download funcionem.
+**Repositório oficial desta versão:** https://github.com/isaacalvex/AMD-BC250-Display-Status-BazziteOS
 
 ### Passo 1 — Baixe o projeto
 
 Execute:
 
 ```bash
-git clone https://github.com/isaacalvex/AMD-BC250-Display-Status-Bazzite.git
+git clone https://github.com/isaacalvex/AMD-BC250-Display-Status-BazziteOS.git
 ```
 
 ### Passo 2 — Entre na pasta do projeto
@@ -21,7 +21,7 @@ git clone https://github.com/isaacalvex/AMD-BC250-Display-Status-Bazzite.git
 Execute:
 
 ```bash
-cd AMD-BC250-Display-Status-Bazzite
+cd AMD-BC250-Display-Status-BazziteOS
 ```
 
 ### Passo 3 — Instale e ative o serviço
@@ -103,6 +103,8 @@ ls -l /dev/serial/by-id/
 O serviço inicia **com a sessão do usuário**; o modo Gaming do Bazzite também utiliza sessões do usuário. Não é garantido que rode antes do login. Para verificar o ESP32, confirme que ele aparece em `/dev/ttyACM*`, `/dev/ttyUSB*` ou `/dev/serial/by-id/`.
 
 Se ocorrer `Permission denied`, verifique o grupo proprietário da porta com `ls -l /dev/ttyACM0`. Se for `dialout`, execute `sudo usermod -aG dialout "$USER"` e depois faça logout/login. Outros grupos podem ser usados dependendo das regras udev.
+
+O ESP32 permanece na animação STELLAR até receber o primeiro pacote válido de CPU e GPU. Depois disso, atualiza aproximadamente a cada segundo. Se ficar mais de 5 segundos sem novos pacotes, volta à animação. O serviço inicia na sessão do usuário (não necessariamente durante o boot, antes do login).
 
 O script **não envia temperaturas simuladas**. CPU usa a leitura `Tctl` de `sensors` e GPU usa hwmon `amdgpu` ou `sensors`. O formato enviado é `CPU:46.6;GPU:44.0` a 115200 baud. Se não houver ambas as leituras, não há pacote.
 
