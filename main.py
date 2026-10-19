@@ -55,38 +55,41 @@ class Window(QMainWindow):
     self.job=None;self.selected_port=None
     center=QWidget();self.setCentralWidget(center)
     full=QHBoxLayout(center);full.setContentsMargins(0,0,0,0);full.setSpacing(0)
-    sidebar=QFrame();sidebar.setObjectName('side');sidebar.setFixedWidth(220)
-    nav=QVBoxLayout(sidebar);nav.setContentsMargins(14,26,14,18);nav.setSpacing(10)
-    title=QLabel('✦  STELLAR');title.setObjectName('brand');nav.addWidget(title)
-    nav.addWidget(QLabel('App Monitor'));nav.addSpacing(25)
+    sidebar=QFrame();sidebar.setObjectName('side');sidebar.setFixedWidth(230)
+    nav=QVBoxLayout(sidebar);nav.setContentsMargins(14,25,14,18);nav.setSpacing(10)
+    title=QLabel('★  STELLAR');title.setObjectName('brand');nav.addWidget(title)
+    nav.addWidget(QLabel('App Monitor'));nav.addSpacing(17)
     self.stack=QStackedWidget();self.nav=[]
     labels=[('⌂','Visão geral'),('⚙','Serviço'),('⌁','Dispositivos USB'),('⇧','Firmware'),('≡','Diagnóstico')]
     for idx,(ico,name) in enumerate(labels):
         b=QPushButton(f'{ico}   {name}');b.setObjectName('nav');b.setCheckable(True)
         b.clicked.connect(lambda _,i=idx:self.page(i));nav.addWidget(b);self.nav.append(b)
     nav.addStretch()
-    main=QWidget();column=QVBoxLayout(main);column.setContentsMargins(24,22,24,17);column.setSpacing(10)
+    main=QWidget();column=QVBoxLayout(main);column.setContentsMargins(23,16,23,12);column.setSpacing(7)
     self.header=QLabel('Visão geral');self.header.setObjectName('heading');column.addWidget(self.header)
     column.addWidget(self.stack,1)
     logsbox=QGroupBox('Registro de atividades · visível em todas as telas');ll=QVBoxLayout(logsbox)
     self.logs=QPlainTextEdit();self.logs.setReadOnly(True);self.logs.setMaximumBlockCount(500)
-    self.logs.setFixedHeight(138);ll.addWidget(self.logs);column.addWidget(logsbox)
+    self.logs.setFixedHeight(116);ll.addWidget(self.logs);column.addWidget(logsbox)
     full.addWidget(sidebar);full.addWidget(main,1)
     self.build_overview();self.build_service();self.build_usb();self.build_firmware();self.build_diagnostics()
     self.setStyleSheet("""
-      QMainWindow,QWidget{background:#101827;color:#e9f1fc;font-size:13px;font-family:'Noto Sans'}
-      QFrame#side{background:#17273c;border-right:1px solid #30465e}
-      QLabel#brand{color:#67e8f9;font-size:23px;font-weight:bold}
-      QLabel#heading{font-size:25px;font-weight:bold}
-      QGroupBox{background:#1d3047;border:1px solid #334d6b;border-radius:11px;margin-top:16px;padding-top:8px;font-weight:bold}
-      QGroupBox::title{subcontrol-origin:margin;left:12px;padding:0 7px;color:#bce7f8}
-      QPushButton{background:#294562;color:white;padding:10px;border-radius:8px;min-height:23px;border:1px solid #395e80}
-      QPushButton:hover{background:#356185} QPushButton:disabled{color:#8896ad;background:#233044}
-      QPushButton#nav{text-align:left;background:transparent;border:0;padding:13px}
-      QPushButton#nav:checked{background:#235272;border-left:3px solid #67e8f9}
-      QPlainTextEdit,QComboBox{background:#0c1626;border:1px solid #405977;border-radius:7px;padding:8px}
-      QProgressBar{background:#0c1626;color:white;border-radius:8px;text-align:center;min-height:25px}
-      QProgressBar::chunk{background:#1498c6;border-radius:8px}
+      QMainWindow,QWidget { background:#0c192b; color:#e8f1fb; font:13px 'Noto Sans'; }
+      QFrame#side { background:#13243a;border-right:1px solid #25405c; }
+      QLabel#brand { color:#f6fbff; font-size:24px; font-weight:800; }
+      QLabel#heading { font-size:28px; font-weight:800; color:#f7fbff; padding-bottom:7px; }
+      QGroupBox { background:#14263d; border:1px solid #31506d; border-radius:13px;margin-top:14px;padding-top:9px;font-weight:700; }
+      QGroupBox::title { subcontrol-origin:margin;left:13px;padding:0 8px;color:#e8f2fb; font-size:15px; }
+      QPushButton { background:#213955;color:#ecf7ff;padding:9px;border:1px solid #365a79;border-radius:9px;min-height:25px;font-weight:650; }
+      QPushButton:hover { background:#285578;border-color:#35bff2; }
+      QPushButton:disabled { color:#8797a7; background:#18293f; }
+      QPushButton#nav { text-align:left; background:transparent; border:0; padding:13px 12px;color:#c0d3ed;font-size:14px; }
+      QPushButton#nav:hover { background:#1d344f; }
+      QPushButton#nav:checked { background:#194366; border:1px solid #1e97d0;border-left:4px solid #21c3fd;color:white; }
+      QPlainTextEdit { background:#071225; border:1px solid #263e58;border-radius:9px;padding:10px;color:#d3e6fa;font-family:monospace;font-size:12px; }
+      QComboBox { background:#111f32; border:1px solid #3f6080;border-radius:8px;padding:9px; }
+      QProgressBar { background:#0c1727;color:white;border:1px solid #34516d;border-radius:8px;text-align:center;min-height:26px; }
+      QProgressBar::chunk { background:#12b6df;border-radius:7px; }
     """)
     self.page(0);self.log('Aplicativo inicializado.')
     self.timer=QTimer(self);self.timer.timeout.connect(self.refresh);self.timer.start(3000)
@@ -102,20 +105,34 @@ class Window(QMainWindow):
  def button(self,lay,title,fn):
     b=QPushButton(title);b.clicked.connect(fn);lay.addWidget(b);return b
  def build_overview(self):
-    w=QWidget();lay=QVBoxLayout(w);lay.setContentsMargins(0,0,0,0);lay.setSpacing(8)
-    temps=self.panel(lay,'Temperaturas em tempo real')
-    row=QHBoxLayout();self.temp_cpu=QLabel('CPU  —');self.temp_gpu=QLabel('GPU  —')
-    for l in (self.temp_cpu,self.temp_gpu):
-      l.setAlignment(Qt.AlignCenter);l.setStyleSheet('font-size:25px;font-weight:bold;color:#67e8f9;padding:11px;background:#203950;border-radius:9px');row.addWidget(l)
-    temps.addLayout(row);self.temp_desc=QLabel('Aguardando leituras');temps.addWidget(self.temp_desc)
-    statuses=self.panel(lay,'Status geral do sistema')
-    grid=QGridLayout();grid.setSpacing(9)
+    w=QWidget();lay=QVBoxLayout(w);lay.setContentsMargins(0,0,0,0);lay.setSpacing(10)
+    intro=QLabel('Acompanhe em tempo real o estado do sistema e dos dispositivos.')
+    intro.setStyleSheet('color:#91b2d2;font-size:12px;')
+    lay.addWidget(intro)
+    row=QHBoxLayout();row.setSpacing(12)
+    self.temp_cpu=QLabel('— °C');self.temp_gpu=QLabel('— °C')
+    self.cpu_source=QLabel('CPU · Tctl / k10temp')
+    self.gpu_source=QLabel('GPU · AMDGPU edge')
+    for source,value,border in [(self.cpu_source,self.temp_cpu,'#277cc1'),(self.gpu_source,self.temp_gpu,'#168d78')]:
+        card=QFrame()
+        card.setStyleSheet('QFrame{background:#142a42;border:1px solid '+border+';border-radius:13px;} QLabel{border:0;background:transparent;}')
+        content=QVBoxLayout(card);content.setContentsMargins(20,14,15,14);content.setSpacing(7)
+        source.setStyleSheet('color:#cfdeed;font-weight:700;font-size:14px;')
+        value.setStyleSheet('color:#28d6f8;font-size:40px;font-weight:800;')
+        content.addWidget(source);content.addWidget(value);row.addWidget(card,1)
+    lay.addLayout(row)
+    heading=QLabel('Status geral do sistema');heading.setStyleSheet('font-size:19px;font-weight:800;color:#f4f8fd;')
+    lay.addWidget(heading)
+    grid=QGridLayout();grid.setSpacing(10)
     self.stat={}
-    for i,(key,title) in enumerate([('installed','✓  Serviço instalado'),('running','◉  Serviço em execução'),('enabled','⏻  Iniciar no login'),('usb','⌁  ESP32 via USB'),('sending','↑  Envio de temperaturas'),('display','▣  Exibição no display')]):
-      tile=QLabel(title+'\nVerificando...');tile.setMinimumHeight(60);tile.setAlignment(Qt.AlignCenter)
-      tile.setStyleSheet('background:#253d55;color:#e7f1fd;border-radius:9px;padding:7px')
-      grid.addWidget(tile,i//2,i%2);self.stat[key]=(title,tile)
-    statuses.addLayout(grid);lay.addStretch();self.stack.addWidget(w)
+    items=[('installed','⚙','Serviço instalado'),('running','▶','Serviço em execução'),('enabled','⏻','Iniciar no login'),('usb','⌁','ESP32 via USB'),('sending','↑','Envio de temperaturas'),('display','▣','Exibição no display')]
+    for i,(key,icon,title) in enumerate(items):
+        tile=QLabel(icon+'    '+title+'\n●  Verificando...')
+        tile.setMinimumHeight(74);tile.setAlignment(Qt.AlignVCenter|Qt.AlignLeft)
+        tile.setStyleSheet('background:#102f37;border:1px solid #11645c;border-radius:11px;color:#56eab1;padding:10px;font-weight:700;font-size:13px;')
+        grid.addWidget(tile,i//3,i%3);self.stat[key]=(icon+'    '+title,tile)
+    lay.addLayout(grid);lay.addStretch(1)
+    self.stack.addWidget(w)
  def build_service(self):
     w=QWidget();lay=QVBoxLayout(w);lay.setContentsMargins(0,0,0,0);lay.setSpacing(13)
     install=self.panel(lay,'Instalação do monitor')
@@ -158,9 +175,9 @@ class Window(QMainWindow):
     lay.addStretch();self.stack.addWidget(w)
  def refresh(self):
     a,an=sensor('k10temp');b,bn=sensor('amdgpu')
-    self.temp_cpu.setText(f'CPU  {a:.1f} °C' if a is not None else 'CPU  indisponível')
-    self.temp_gpu.setText(f'GPU  {b:.1f} °C' if b is not None else 'GPU  indisponível')
-    self.temp_desc.setText(f'{an}  |  {bn}')
+    self.temp_cpu.setText(f'{a:.1f} °C'.replace('.',',') if a is not None else 'Indisponível')
+    self.temp_gpu.setText(f'{b:.1f} °C'.replace('.',',') if b is not None else 'Indisponível')
+    self.cpu_source.setText(f'CPU · {an}');self.gpu_source.setText(f'GPU · {bn}')
     exists=UNIT_PATH.exists()
     rc,run=command(['systemctl','--user','is-active',UNIT],5)
     rc,en=command(['systemctl','--user','is-enabled',UNIT],5)
@@ -174,7 +191,7 @@ class Window(QMainWindow):
             'display':(None,'Não confirmada')}
     for key,(ok,val) in values.items():
       name,tile=self.stat[key];color='#86efac' if ok else ('#fbbf24' if ok is None else '#fda4af')
-      tile.setText(name+'\n'+val);tile.setStyleSheet('background:#253d55;color:'+color+';border-radius:9px;padding:7px')
+      tile.setText(name+'\n●  '+val);tile.setStyleSheet('background:'+('#332f21' if ok is None else '#102f37' if ok else '#382834')+';border:1px solid '+('#9c8037' if ok is None else '#147b6d' if ok else '#8f4355')+';color:'+color+';border-radius:11px;padding:10px;font-weight:700;font-size:13px;')
  def refresh_usb(self):
     current=self.combo.currentData() if self.combo.count() else None
     self.combo.clear();lst=ports()
