@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 firmware/*.bin
 *.log
+abrir-stellar.sh
