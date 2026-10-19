@@ -32,7 +32,7 @@ Execute:
 bash setup.sh
 ```
 
-O instalador cria o ambiente virtual Python, instala o `pyserial`, registra o serviço `bc250-display.service` e o habilita e inicia automaticamente na **sessão do usuário**.
+O instalador identifica a porta ESP32 conectada, verifica as permissões de leitura/escrita e, se necessário, pede autorização `sudo` para adicionar seu usuário ao grupo real do dispositivo. Em seguida, cria o ambiente virtual Python, instala o `pyserial`, registra o serviço `bc250-display.service` e o habilita para iniciar automaticamente na **sessão do usuário**. Se o grupo for alterado, reinicie o computador ou encerre e reabra a sessão antes de avaliar a conexão USB.
 
 ### Passo 4 — Conecte o ESP32 e confira o serviço
 
@@ -102,7 +102,7 @@ ls -l /dev/serial/by-id/
 
 O serviço inicia **com a sessão do usuário**; o modo Gaming do Bazzite também utiliza sessões do usuário. Não é garantido que rode antes do login. Para verificar o ESP32, confirme que ele aparece em `/dev/ttyACM*`, `/dev/ttyUSB*` ou `/dev/serial/by-id/`.
 
-Se ocorrer `Permission denied`, verifique o grupo proprietário da porta com `ls -l /dev/ttyACM0`. Se for `dialout`, execute `sudo usermod -aG dialout "$USER"` e depois faça logout/login. Outros grupos podem ser usados dependendo das regras udev.
+Se aparecer `Permission denied`, conecte o ESP32, entre na pasta do projeto e execute novamente `bash setup.sh`. O instalador segue o link persistente até o dispositivo real, detecta seu grupo e solicita `sudo` apenas quando necessário para ajustar a associação do usuário. **Depois de adicionar o grupo, faça logout/login ou reinicie**; reiniciar somente o serviço não aplica os novos grupos à sessão existente. Não use `chmod 777` na porta USB. Se as permissões continuarem incorretas, confira `ls -lL /dev/serial/by-id/*` e `id -nG` e verifique ACLs/regras udev.
 
 O ESP32 permanece na animação STELLAR até receber o primeiro pacote válido de CPU e GPU. Depois disso, atualiza aproximadamente a cada segundo. Se ficar mais de 5 segundos sem novos pacotes, volta à animação. O serviço inicia na sessão do usuário (não necessariamente durante o boot, antes do login).
 
@@ -142,3 +142,15 @@ systemctl --user restart bc250-display.service
 ```
 
 A porta real pode ser identificada com `ls -l /dev/serial/by-id/`. Prefira um caminho persistente de `/dev/serial/by-id/` quando disponível.
+
+## Reparar permissões USB (instalação existente)
+
+1. Conecte o ESP32-C3 ao computador.
+2. Entre no diretório clonado: `cd ~/AMD-BC250-Display-Status-BazziteOS`.
+3. Atualize o instalador: `git pull --ff-only`.
+4. Execute novamente: `bash setup.sh`.
+5. Se for solicitado e você concordar, digite a senha de administrador para adicionar seu usuário ao grupo da porta.
+6. **Reinicie ou encerre e reabra a sessão** se a associação de grupo for alterada.
+7. Confira o envio com `journalctl --user -u bc250-display.service -f`.
+
+Se o ESP32 **não estiver conectado** no momento da instalação, o ajuste de permissões será adiado e o instalador avisará. A regra não muda permissões da porta para todos os usuários: utiliza a associação ao grupo existente. Em sistemas com ACLs/regras udev específicas, pode ser necessário um ajuste manual adicional.
