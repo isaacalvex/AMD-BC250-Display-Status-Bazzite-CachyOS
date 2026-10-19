@@ -8,9 +8,13 @@ SERVICE_NAME="bc250-display.service"
 PYTHON="$INSTALL_DIR/venv/bin/python"
 
 if [[ ${EUID} -eq 0 ]]; then echo 'Execute como usuário normal, sem sudo.' >&2; exit 1; fi
-for cmd in git python3 systemctl sensors; do
+for cmd in git python3 systemctl; do
   command -v "$cmd" >/dev/null || { echo "Comando necessário ausente: $cmd" >&2; exit 1; }
 done
+
+if ! command -v sensors >/dev/null 2>&1; then
+  echo 'Aviso: sensors não disponível. O monitor tentará usar os sensores hwmon do kernel.'
+fi
 
 mkdir -p "$(dirname "$INSTALL_DIR")" "$SERVICE_DIR"
 if [[ -d "$INSTALL_DIR/.git" ]]; then
