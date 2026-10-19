@@ -24,6 +24,10 @@ signal.signal(signal.SIGTERM, encerrar)
 
 
 def portas_candidatas():
+    # Permite fixar a porta quando há vários dispositivos seriais conectados.
+    configurada = os.environ.get('BC250_SERIAL_PORT', '').strip()
+    if configurada:
+        return [configurada]
     # A seleção de ESP32 via by-id é preferida a uma porta arbitrária.
     ids = sorted(glob.glob('/dev/serial/by-id/*'))
     esp = [p for p in ids if any(k in p.lower() for k in ('esp32', 'espressif', 'usb_jtag', 'cp210', 'ch340'))]
@@ -31,6 +35,24 @@ def portas_candidatas():
 
 
 def ler_cpu():
+    # Fonte alternativa independente do comando sensors (k10temp).
+    for arquivo in sorted(glob.glob('/sys/class/hwmon/hwmon*/temp*_input')):
+        try:
+            pasta = os.path.dirname(arquivo)
+            with open(os.path.join(pasta, 'name'), encoding='utf-8') as f:
+                if f.read().strip().lower() != 'k10temp':
+                    continue
+            rotulo = arquivo.replace('_input', '_label')
+            if os.path.isfile(rotulo):
+                with open(rotulo, encoding='utf-8') as f:
+                    if f.read().strip().lower() not in ('tctl', 'tdie'):
+                        continue
+            with open(arquivo, encoding='utf-8') as f:
+                valor = int(f.read().strip()) / 1000.0
+            if -20 <= valor <= 120:
+                return valor
+        except (OSError, ValueError):
+            continue
     try:
         out = subprocess.run(['sensors'], capture_output=True, text=True, timeout=1).stdout
         for linha in out.splitlines():
