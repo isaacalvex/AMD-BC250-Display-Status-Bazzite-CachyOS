@@ -267,9 +267,10 @@ class Window(QMainWindow):
         self.error('Atualização','Outra operação está em andamento.');return
     if not (BASE/'.git').is_dir():
         self.error('Atualização','Instalação sem Git. Reinstale pelo comando oficial do README.');return
-    rc,dirty=command(['git','-C',str(BASE),'status','--porcelain'],15)
+    rc,dirty=command(['git','-C',str(BASE),'status','--porcelain','--untracked-files=no'],15)
     if rc or dirty:
-        self.error('Atualização','Existem alterações locais ou não foi possível verificar o Git. Atualização automática bloqueada para preservar os arquivos.')
+        self.log('Diagnóstico Git: '+(dirty or 'git status retornou código '+str(rc)))
+        self.error('Atualização','Há modificações em arquivos versionados ou o Git falhou. Arquivos gerados pelo aplicativo não bloqueiam atualizações. Consulte os logs.')
         return
     self.fetch_button.setEnabled(False);self.apply_button.setEnabled(False)
     self.update_progress.setValue(0);self.update_label.setText('Baixando atualização...')
@@ -318,8 +319,8 @@ class Window(QMainWindow):
     self.apply_button.setEnabled(False);self.fetch_button.setEnabled(False)
     self.update_label.setText('Aplicando atualização...')
     def task(j):
-        rc,dirty=command(['git','-C',str(BASE),'status','--porcelain'],15)
-        if rc or dirty:raise RuntimeError('Arquivos locais alterados. Atualização cancelada.')
+        rc,dirty=command(['git','-C',str(BASE),'status','--porcelain','--untracked-files=no'],15)
+        if rc or dirty:raise RuntimeError('Arquivos versionados modificados ou Git indisponível. Atualização cancelada: '+(dirty or str(rc)))
         j.emit('Aplicando commit baixado...')
         j.cmd(['git','-C',str(BASE),'merge','--ff-only','FETCH_HEAD'],60)
         j.emit('Atualizando dependências Python...')
