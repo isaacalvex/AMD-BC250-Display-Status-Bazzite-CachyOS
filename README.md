@@ -4,49 +4,87 @@ Versão dedicada ao **Bazzite OS** (Fedora Atomic). Instala o monitor serial par
 
 ## Como instalar o serviço
 
-Abra o terminal do **Bazzite** e execute o comando abaixo para baixar o projeto, entrar na pasta e instalar o serviço:
+Siga os passos abaixo no **terminal do Bazzite**. Não execute os comandos com `sudo`, exceto quando indicado para corrigir permissões.
+
+> **Importante:** o repositório `AMD-BC250-Display-Status-Bazzite` precisa estar publicado no GitHub para que os comandos de download funcionem.
+
+### Passo 1 — Baixe o projeto
+
+Execute:
 
 ```bash
-git clone https://github.com/isaacalvex/AMD-BC250-Display-Status-Bazzite.git && cd AMD-BC250-Display-Status-Bazzite && bash setup.sh
+git clone https://github.com/isaacalvex/AMD-BC250-Display-Status-Bazzite.git
 ```
 
-> **Atenção:** o comando acima só funcionará depois que este repositório for publicado no GitHub com os arquivos do projeto.
+### Passo 2 — Entre na pasta do projeto
 
-O instalador configura um ambiente virtual Python, instala o `pyserial`, cria o serviço `bc250-display.service` e o habilita para iniciar automaticamente **na sessão do usuário**. Não é necessário iniciar o programa manualmente a cada login. A execução antes do login não é garantida.
-
-**Requisitos:** `git`, `python3` com suporte a `venv`, conexão com a internet e o comando `sensors` disponível no sistema. O instalador não usa `dnf install` nem altera os pacotes do sistema base.
-
-### Como iniciar e verificar o serviço
-
-Para iniciar imediatamente (caso não esteja em execução):
+Execute:
 
 ```bash
-systemctl --user start bc250-display.service
+cd AMD-BC250-Display-Status-Bazzite
 ```
 
-Para verificar o estado do serviço:
+### Passo 3 — Instale e ative o serviço
+
+Execute:
+
+```bash
+bash setup.sh
+```
+
+O instalador cria o ambiente virtual Python, instala o `pyserial`, registra o serviço `bc250-display.service` e o habilita e inicia automaticamente na **sessão do usuário**.
+
+### Passo 4 — Conecte o ESP32 e confira o serviço
+
+O ESP32-C3 precisa estar conectado via USB e com o firmware gravado conforme a seção **Firmware** abaixo. Para verificar o estado do serviço, execute:
 
 ```bash
 systemctl --user status bc250-display.service
 ```
 
-Para acompanhar os dados e possíveis erros em tempo real:
+O estado `active (running)` indica que o processo está em execução; **não garante**, por si só, que temperaturas estejam chegando à tela.
+
+### Passo 5 — Acompanhe o envio das temperaturas
+
+Execute:
 
 ```bash
 journalctl --user -u bc250-display.service -f
 ```
 
-Para reiniciar o serviço:
+Se CPU e GPU forem identificadas e o ESP32 estiver conectado corretamente, os logs mostrarão as leituras enviadas. Pressione **Ctrl+C** para sair dos logs sem desligar o serviço.
+
+### Passo 6 — Confirme a inicialização automática
+
+Execute:
+
+```bash
+systemctl --user is-enabled bc250-display.service
+```
+
+A resposta `enabled` indica que o serviço está configurado para iniciar automaticamente na sessão do usuário. Não é garantida a execução antes do login.
+
+### Comandos úteis
+
+**Iniciar o serviço manualmente:**
+
+```bash
+systemctl --user start bc250-display.service
+```
+
+**Reiniciar o serviço:**
 
 ```bash
 systemctl --user restart bc250-display.service
 ```
 
-Para confirmar que ele iniciará automaticamente nas próximas sessões:
+**Parar o serviço:**
 
 ```bash
-systemctl --user is-enabled bc250-display.service
+systemctl --user stop bc250-display.service
 ```
+
+**Requisitos:** `git`, `python3` com `venv`, acesso à internet e o comando `sensors` disponível para leitura das temperaturas. O instalador não usa `dnf install` nem altera pacotes da imagem imutável do Bazzite.
 
 ## Firmware
 
