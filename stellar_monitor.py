@@ -120,8 +120,13 @@ def pacote_download(download):
     nome = _nome_serial(download.name)
     velocidade = (f'{download.speed_mb_s:.1f}'
                   if download.speed_mb_s is not None else '-1')
-    return (f'DL:1;PCT:{download.percent};SPEED:{velocidade};'
-            f'NAME:{nome}\n').encode('utf-8')
+    precisa = (download.percent_precise
+               if download.percent_precise is not None
+               else float(download.percent))
+    # PCTF ANTES de PCT: o firmware atual ignora PCTF e mantém a tela
+    # funcional; o firmware novo usa a precisão centesimal para o anel.
+    return (f'DL:1;PCTF:{precisa:.2f};PCT:{download.percent};'
+            f'SPEED:{velocidade};NAME:{nome}\n').encode('utf-8')
 
 
 def steam_status():
@@ -266,8 +271,10 @@ def steam_watch(seconds=10):
                 using_files = using_files or live is None
                 speed = (f'{result.speed_mb_s:.1f} MB/s'
                          if result.speed_mb_s is not None else '-- MB/s (sem medição)')
+                preciso=(f'{result.percent_precise:.2f}'
+                         if result.percent_precise is not None else str(result.percent))
                 print(f'[{i+1:02d}/{seconds}] AppID {result.appid} | '
-                      f'{result.name} | {result.percent}% | {speed} | '
+                      f'{result.name} | {preciso}% | {speed} | '
                       f'etapa={result.phase} | {result.source}', flush=True)
                 snapshots.append((result.appid,result.percent,result.speed_mb_s))
             else:
