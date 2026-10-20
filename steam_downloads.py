@@ -21,7 +21,9 @@ _APP_MANIFEST = re.compile(r'^appmanifest_(\d+)\.acf$')
 # 1024=UpdateStarted, 1048576=Downloading.
 _RUNNING = 256 | 1024 | 1048576
 _PAUSED = 512
-_MAX_RATE_AGE = 100.0
+# Uma amostra global do content_log NÃO é telemetria ao vivo.
+# Nunca reapresentar por dezenas de segundos a taxa capturada uma vez.
+_MAX_RATE_AGE = 3.0
 
 
 @dataclass(frozen=True)
@@ -326,9 +328,9 @@ class SteamDownloadTracker:
                 delta = 0
                 if phase == "download" and previous and completed >= previous[0]:
                     delta = completed - previous[0]
-                    seconds = now - previous[1]
-                    if delta > 0 and seconds > 0:
-                        measured = delta / seconds / 1_000_000
+                    # O manifesto é gravado em checkpoints. O aumento de
+                    # BytesDownloaded em um arquivo entre duas consultas NÃO
+                    # mede a taxa instantânea de rede. Não inferir MB/s daqui.
                 # Durante instalação a rede pode corretamente estar em 0 MB/s.
                 if phase != "download":
                     measured = 0.0
