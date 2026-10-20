@@ -10,6 +10,19 @@ elif [[ ! -e "$DIR" ]]; then git clone --depth=1 "$REPO" "$DIR"
 else echo "Diretório $DIR já existe e não é um repositório Git"; exit 1; fi
 python3 -m venv "$DIR/.venv" || { echo "Falha ao criar venv: verifique python3-venv"; exit 1; }
 "$DIR/.venv/bin/python" -m pip install --disable-pip-version-check -r "$DIR/requirements.txt"
+# Impede que um arquivo Python com SyntaxError derrube o serviço ao atualizar.
+echo "[Stellar] Verificando sintaxe e imports do serviço antes de reiniciar..."
+"$DIR/.venv/bin/python" -m py_compile \
+  "$DIR/stellar_monitor.py" "$DIR/steam_cef.py" \
+  "$DIR/steam_downloads.py" "$DIR/steam_selection.py" "$DIR/main.py" || {
+  echo "[Stellar] ERRO: atualização contém falha de sintaxe; serviço não será reiniciado."
+  exit 1
+}
+(cd "$DIR" && "$DIR/.venv/bin/python" -c 'import stellar_monitor; import steam_cef; import steam_downloads; import steam_selection') || {
+  echo "[Stellar] ERRO: importação do backend falhou; serviço não será reiniciado."
+  exit 1
+}
+echo "[Stellar] Backend Python validado."
 # Aplicar a nova versão do bridge Python quando o serviço já existe.
 if [[ -f "$HOME/.config/systemd/user/bc250-display.service" ]]; then
   echo "[Stellar] Reiniciando o serviço de temperaturas e downloads Steam..."
