@@ -6,8 +6,11 @@ import re
 import signal
 import subprocess
 import time
+import sys
+from pathlib import Path
 
 import serial
+from steam_downloads import SteamDownloadTracker
 
 BAUDRATE = 115200
 INTERVALO = 1.0
@@ -26,7 +29,12 @@ signal.signal(signal.SIGTERM, encerrar)
 def portas_candidatas():
     # Permite fixar a porta quando há vários dispositivos seriais conectados.
     configurada = os.environ.get('BC250_SERIAL_PORT', '').strip()
-    if configurada:
+    if not configurada:
+        try:
+            configurada = (Path.home() / '.config/bc250-display/port').read_text(encoding='utf-8').strip()
+        except OSError:
+            pass
+    if configurada and configurada.startswith('/dev/'):
         return [configurada]
     # A seleção de ESP32 via by-id é preferida a uma porta arbitrária.
     ids = sorted(glob.glob('/dev/serial/by-id/*'))
@@ -95,8 +103,37 @@ def ler_gpu():
     return None
 
 
+def _nome_serial(nome):
+    # Nunca deixe delimitadores e quebras de linha da Steam afetarem o protocolo.
+    nome = re.sub(r'[;\r\n\x00-\x1f]', ' ', nome)
+    nome = ' '.join(nome.split())
+    # Deixa uma folga para o limite de buffer de 240 caracteres do ESP32.
+    while len(nome.encode('utf-8')) > 140:
+        nome = nome[:-1]
+    return nome or 'Jogo'
+
+
+def steam_status():
+    tracker = SteamDownloadTracker()
+    info = tracker.scan()
+    print("Raizes Steam encontradas:", flush=True)
+    for root in tracker.last_roots:
+        print(" -", root, flush=True)
+    if info is None:
+        print("Nenhum download ativo detectado nos manifests Steam.", flush=True)
+    else:
+        speed = f"{info.speed_mb_s:.1f} MB/s" if info.speed_mb_s is not None else "não disponível"
+        print(f"Download: {info.name} (AppID {info.appid}) "
+              f"{info.percent}% | {speed}", flush=True)
+        print("Origem:", info.source, flush=True)
+        print("Nota: counters da Steam podem atualizar em checkpoints.", flush=True)
+
+
 def main():
-    print('AMD BC250 Display Status - Bazzite', flush=True)
+    print('Stellar Display - temperaturas + downloads Steam (Bazzite/CachyOS)', flush=True)
+    tracker = SteamDownloadTracker()
+    last_steam_report = 0.0
+    last_steam_identity = None
     while rodando:
         serial_port = None
         for porta in portas_candidatas():
@@ -111,22 +148,52 @@ def main():
             print('ESP32 não localizado. Tentando novamente...', flush=True)
             time.sleep(3)
             continue
+
+        download_anterior = False
         with serial_port as ser:
             while rodando:
-                cpu, gpu = ler_cpu(), ler_gpu()
-                if cpu is not None and gpu is not None:
-                    try:
+                try:
+                    cpu, gpu = ler_cpu(), ler_gpu()
+                    if cpu is not None and gpu is not None:
                         pacote = f'CPU:{cpu:.1f};GPU:{gpu:.1f}\n'
-                        ser.write(pacote.encode())
-                        ser.flush()
+                        ser.write(pacote.encode('ascii'))
                         print(pacote.strip(), flush=True)
-                    except (OSError, serial.SerialException) as ex:
-                        print(f'USB desconectado: {ex}', flush=True)
-                        break
-                else:
-                    print('Sem leitura válida de CPU/GPU.', flush=True)
+                    try:
+                        download = tracker.scan()
+                    except Exception as ex:
+                        print(f'Steam: falha temporária na leitura: {ex}', flush=True)
+                        download = None
+
+                    if download is not None:
+                        nome = _nome_serial(download.name)
+                        velocidade = (f'{download.speed_mb_s:.1f}'
+                                      if download.speed_mb_s is not None else '-1')
+                        pacote = (f'DL:1;PCT:{download.percent};SPEED:{velocidade};'
+                                  f'NAME:{nome}\n')
+                        ser.write(pacote.encode('utf-8'))
+                        if (last_steam_identity != (download.appid, download.percent) or
+                            time.monotonic() - last_steam_report >= 15):
+                            taxa = (f'{download.speed_mb_s:.1f} MB/s'
+                                    if download.speed_mb_s is not None else 'indisponível')
+                            print(f'Steam download: {nome} | {download.percent}% | {taxa}', flush=True)
+                            last_steam_report = time.monotonic()
+                            last_steam_identity = (download.appid, download.percent)
+                        download_anterior = True
+                    elif download_anterior:
+                        ser.write(b'DL:0\n')
+                        print('Steam download: sem transferência ativa; tela térmica.', flush=True)
+                        last_steam_identity = None
+                        download_anterior = False
+
+                    ser.flush()
+                except (OSError, serial.SerialException) as ex:
+                    print(f'USB desconectado: {ex}', flush=True)
+                    break
                 time.sleep(INTERVALO)
 
 
 if __name__ == '__main__':
-    main()
+    if '--steam-status' in sys.argv:
+        steam_status()
+    else:
+        main()
