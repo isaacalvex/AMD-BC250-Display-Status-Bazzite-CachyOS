@@ -26,8 +26,8 @@ _JS = r"""(async () => {
   if (!d) return {error: "SteamClient.Downloads indisponivel"};
   // Chave versionada: a sessão Steam preserva objetos JS e callbacks antigos
   // mesmo após atualizar o Python, o que deixa itemsCount > 0 com gotItems=false.
-  if (!window.__stellarDownloadReaderV3) {
-    const cache = window.__stellarDownloadReaderV3 = {
+  if (!window.__stellarDownloadReaderV4) {
+    const cache = window.__stellarDownloadReaderV4 = {
       overview:null, items:[], overviewTime:0, itemsTime:0,
       error:null, ready:false
     };
@@ -47,7 +47,7 @@ _JS = r"""(async () => {
       cache.error = String(e).slice(0,160);
     }
   }
-  const cache = window.__stellarDownloadReaderV3;
+  const cache = window.__stellarDownloadReaderV4;
   // SteamClient informa os dados assincronamente via callbacks. A
   // primeira consulta não deve confundir "ainda não recebido" com "ocioso".
   if (!cache.overview && !cache.itemsTime) {
@@ -71,19 +71,41 @@ _JS = r"""(async () => {
     'update_bytes_staged','update_bytes_to_stage',
     'update_bytes_processed','update_bytes_to_process',
     'update_network_bytes_per_second','update_disc_bytes_per_second',
-    'update_is_shader','update_is_install'
+    'update_is_shader','update_is_install','update_state_flags',
+    'overall_percent_complete'
   ];
   const overview = {};
   if (o) for (const k of keys) {
     if (o[k] !== undefined) overview[k] = o[k];
   }
+  // Este build Steam expõe progress, não update_bytes_*.
+  // Copiar apenas métricas numéricas, jamais cookies ou dados da conta.
+  const safeProgress = (value, depth=0) => {
+    if (typeof value === 'number')
+      return Number.isFinite(value) ? value : null;
+    if (depth >= 3 || !value || typeof value !== 'object') return null;
+    if (Array.isArray(value)) return value.slice(0,8).map(v => safeProgress(v,depth+1));
+    const allowed = /progress|percent|complet|download|install|stage|byte|total|fraction|process|network|disk|disc|value/i;
+    const obj = {};
+    for (const key of Object.keys(value).filter(k => allowed.test(k)).slice(0,35)) {
+      const val = safeProgress(value[key], depth+1);
+      if (val !== null) obj[key] = val;
+    }
+    return obj;
+  };
+  if (o && o.progress !== undefined) overview.progress = safeProgress(o.progress);
+  const itemKeys = (cache.items || []).slice(0,3).map(x =>
+    x && typeof x === 'object'
+      ? Object.keys(x).filter(k => /appid|app_id|app|download|byte|total|progress|percent|state|active|stage|install|complete/i.test(k)).slice(0,50)
+      : []
+  );
   const items = (cache.items || []).slice(0,30).map(x => ({
     appid:x.appid, active:x.active, paused:x.paused,
     completed:x.completed, name:x.name,
     downloaded_bytes:x.downloaded_bytes, total_bytes:x.total_bytes
   }));
   return {
-    overview, items,
+    overview, items, itemKeys,
     overviewKeys: o ? Object.keys(o).filter(k =>
       /update|download|stage|progress|bytes|process|install|total|state|rate|speed/i.test(k)
     ).slice(0,75) : [],
@@ -137,6 +159,59 @@ def _state_is_install(state: str) -> bool:
 class CEFDiagnostic:
     status: str
     port: int | None
+
+
+def _native_progress_precise(overview: dict) -> float | None:
+    """Valor geral emitido pela Steam, preferível ao cálculo via ACF.
+
+    Builds atuais fornecem progress em vez dos campos update_bytes_*.
+    Reconhece frações (0..1) ou porcentagens (0..100) explícitas.
+    """
+    def number(value, *, fraction=False):
+        if isinstance(value, bool):
+            return None
+        try:
+            x=float(value)
+        except (TypeError,ValueError,OverflowError):
+            return None
+        import math
+        if not math.isfinite(x) or x < 0:
+            return None
+        if fraction:
+            if x > 1:
+                return None
+            x *= 100
+        elif x > 100:
+            return None
+        return round(min(99.99,x),2)
+
+    for name in ("overall_percent_complete","overall_percentage"):
+        if name in overview:
+            pct=number(overview[name])
+            if pct is not None: return pct
+
+    progress=overview.get("progress")
+    if isinstance(progress,(int,float)) and not isinstance(progress,bool):
+        # Progresso simples costuma ser fração entre 0.0 e 1.0.
+        return number(progress,fraction=0 <= progress <= 1)
+    if not isinstance(progress,dict):
+        return None
+    for name in ("overall_percent_complete","overall_percentage",
+                 "overall_percent","percent_complete","percentage","percent"):
+        if name in progress:
+            pct=number(progress[name])
+            if pct is not None: return pct
+    for name in ("overall_fraction_complete","fraction_complete",
+                 "fraction","progress_fraction","progress"):
+        if name in progress:
+            raw=progress[name]
+            if isinstance(raw,dict):
+                nested=_native_progress_precise({"progress":raw})
+                if nested is not None: return nested
+            else:
+                pct=number(raw,fraction=True)
+                if pct is not None: return pct
+    return None
 
 
 def steam_ui_progress_precise(overview: dict) -> float | None:
@@ -348,7 +423,10 @@ class SteamCEFReader:
             speed=None
         if speed is not None:
             self.live_metrics=(appid,round(speed,2),time.monotonic())
-        pct_precise=steam_ui_progress_precise(o) if ongoing else None
+        # Valor nativo da Steam tem prioridade sobre contadores e manifesto.
+        native_pct=_native_progress_precise(o) if ongoing else None
+        pct_precise=(native_pct if native_pct is not None
+                     else steam_ui_progress_precise(o) if ongoing else None)
         if pct_precise is None and item is not None:
             try:
                 total=max(0,int(item.get("total_bytes") or 0))
@@ -410,6 +488,8 @@ class SteamCEFReader:
             appid=appid,name=name,percent=pct,
             speed_mb_s=round(speed,1) if speed is not None else None,
             completed=completed,total=total,
-            source="Steam CEF (tarefa completa; progresso geral estimado)",
+            source=("Steam CEF (progresso nativo Steam)"
+                    if native_pct is not None else
+                    "Steam CEF (tarefa completa; progresso geral estimado)"),
             phase="install" if installing else "download",
             percent_precise=pct_precise)
