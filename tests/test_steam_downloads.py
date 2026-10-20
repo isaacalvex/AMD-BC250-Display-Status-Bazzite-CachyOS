@@ -80,7 +80,8 @@ class SteamDownloadTests(unittest.TestCase):
         item = SteamDownloadTracker().scan()
         self.assertIsNotNone(item)
         self.assertEqual(item.name, "Jogo Steam Bazzite")
-        self.assertEqual(item.percent, 65)
+        # Download (65%) ainda requer 1,3M de preparação em disco.
+        self.assertEqual(item.percent, 28)
 
     def test_real_log_staging_keeps_job_active(self):
         manifest(self.root, "72", "Jogo processando", 650000, 1000000, 2)
@@ -176,7 +177,8 @@ class SteamDownloadTests(unittest.TestCase):
         self.assertIsNotNone(data)
         self.assertEqual(data.name, "Vampire Survivors")
         self.assertEqual(data.appid, "1794680")
-        self.assertEqual(data.percent, 1)
+        # A tarefa geral inclui staging informado no log.
+        self.assertEqual(data.percent, 0)
 
     def test_bazzite_shader_preferred_over_inactive_manifest(self):
         manifest(self.root, "1209490", "Exit the Gungeon",
