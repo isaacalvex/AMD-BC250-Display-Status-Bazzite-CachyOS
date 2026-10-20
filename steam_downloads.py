@@ -214,7 +214,7 @@ class SteamDownloadTracker:
 
                 if not total or completed >= total:
                     continue
-                if flags & _PAUSED:
+                if flags & _PAUSED and not (event and event["active"]):
                     continue
                 # O estado da transferência pode estar atualizado no log,
                 # mesmo quando o appmanifest ainda não foi salvo pela Steam.
