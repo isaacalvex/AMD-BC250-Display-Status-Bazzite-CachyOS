@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from urllib.parse import urlsplit
 from pathlib import Path
 
-from steam_downloads import Download, _ACF_FIELD, _read, steam_roots
+from steam_downloads import Download, _manifest_fields, _read, steam_roots
 
 
 # Estes campos são expostos pelo SteamClient.Downloads.RegisterForDownloadOverview
@@ -98,7 +98,7 @@ def _steam_app_name(appid: str, cache: dict[str,str]) -> str:
         except OSError:
             continue
         for manifest in manifests:
-            fields=dict(_ACF_FIELD.findall(_read(manifest)))
+            fields=_manifest_fields(_read(manifest))
             name=fields.get("name","").strip()
             if name:
                 cache[appid]=name[:120]
