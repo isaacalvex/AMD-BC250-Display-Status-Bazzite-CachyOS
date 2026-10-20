@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Stellar App Monitor — PySide6 desktop client for AMD BC250 / ESP32-C3."""
-import os, sys, re, glob, time, subprocess, threading, urllib.request, collections
+import os, sys, re, glob, time, subprocess, threading, urllib.request, collections, grp, pwd, shutil, stat
 from pathlib import Path
 from datetime import datetime
 from PySide6.QtCore import Qt, QObject, Signal, QTimer, QThread, QRectF, QPointF
@@ -37,6 +37,28 @@ def sensor(name):
 def ports():
     from serial.tools import list_ports
     return sorted([x for x in list_ports.comports() if x.vid is not None], key=lambda x:x.device)
+
+def usb_access(port):
+    """Informe o motivo concreto de falha USB, sem modificar permissões globais."""
+    if not port:
+        return False, 'Nenhuma porta ESP32 selecionada.'
+    try:
+        info = os.stat(port)
+        if not stat.S_ISCHR(info.st_mode):
+            return False, f'{port} não é um dispositivo serial válido.'
+        group = grp.getgrgid(info.st_gid).gr_name
+        owner = pwd.getpwuid(info.st_uid).pw_name
+        if not os.access(port, os.R_OK | os.W_OK):
+            return False, (f'Acesso negado a {port} (dono {owner}, grupo {group}, '
+                           f'permissões {stat.filemode(info.st_mode)}). '
+                           'Abra Dispositivos USB → Corrigir permissões USB. '
+                           'Depois, se solicitado, encerre a sessão e entre novamente.')
+        return True, f'Acesso de leitura e gravação permitido em {port} (grupo {group}).'
+    except OSError as exc:
+        return False, f'Não foi possível verificar {port}: {exc}'
+    except KeyError:
+        return False, 'Não foi possível identificar o grupo proprietário da porta serial.'
+
 class Job(QThread):
     line=Signal(str);progress=Signal(int);done=Signal(bool,str)
     def __init__(self,func): super().__init__();self.func=func
@@ -227,7 +249,7 @@ class Window(QMainWindow):
     row=QHBoxLayout()
     self.button(row,'Atualizar lista',self.refresh_usb);self.button(row,'Testar porta',self.test_usb)
     self.button(row,'Usar esta porta',self.save_usb);box.addLayout(row)
-    self.button(box,'Ajuda com permissões USB',self.usb_help)
+    self.button(box,'Corrigir permissões USB',self.usb_help)
     lay.addStretch();self.stack.addWidget(w)
  def build_firmware(self):
     w=QWidget();lay=QVBoxLayout(w);lay.setContentsMargins(0,0,0,0)
@@ -378,7 +400,13 @@ class Window(QMainWindow):
       port=self.usb()
       with serial.Serial(port,115200,timeout=1):pass
       self.log(f'USB: acesso OK em {port}. Isto não verifica firmware/display.')
-    except Exception as e:self.error('USB',str(e))
+    except Exception as e:
+      self.log('Falha no teste USB: '+str(e))
+      try:
+        allowed,detail=usb_access(self.combo.currentData())
+        if not allowed:self.error('Permissão USB',detail);return
+      except Exception:pass
+      self.error('USB',str(e))
  def save_usb(self):
     try:
       port=self.usb();cfg=HOME/'.config/bc250-display'
@@ -387,8 +415,51 @@ class Window(QMainWindow):
       self.log(f'Porta selecionada e salva: {port}')
     except Exception as e:self.error('USB',str(e))
  def usb_help(self):
-    self.log('USB: para corrigir permissão, verifique ls -l /dev/ttyACM0 e os grupos do usuário.')
-    QMessageBox.information(self,'Permissão USB','Verifique o grupo proprietário da porta com ls -l /dev/ttyACM0 ou ttyUSB0. Adicione o usuário ao grupo apropriado e entre novamente na sessão. Não use chmod 777.')
+    try:
+        port=self.usb()
+        allowed,detail=usb_access(port)
+        self.log('Diagnóstico de acesso USB: '+detail)
+        if allowed:
+            QMessageBox.information(self,'Permissão USB','Acesso de leitura/gravação permitido.\\n'+detail)
+            return
+        group=grp.getgrgid(os.stat(port).st_gid).gr_name
+        if group not in ('dialout','uucp'):
+            self.error('Permissão USB',
+                       detail+'\\n\\nA porta não pertence a dialout/uucp. '
+                       'Não alterarei permissões de grupos desconhecidos automaticamente.')
+            return
+        user=pwd.getpwuid(os.getuid()).pw_name
+        if group in [grp.getgrgid(gid).gr_name for gid in os.getgroups()]:
+            self.error('Permissão USB',detail+'\\nO grupo já está ativo: verifique ACL/udev e permissões da porta.')
+            return
+        if QMessageBox.question(self,'Corrigir permissões USB',
+            f'Permitir que o usuário {user} acesse portas do grupo {group}?\\n\\n'
+            'Esta alteração é persistente, exige autenticação de administrador e '
+            'normalmente precisa de sair e entrar novamente na sessão.\\n\\n'
+            'Deseja aplicar?',QMessageBox.Yes|QMessageBox.No,QMessageBox.No)!=QMessageBox.Yes:
+            self.log('Correção USB cancelada pelo usuário.')
+            return
+        pkexec=shutil.which('pkexec')
+        usermod=next((p for p in ('/usr/sbin/usermod','/sbin/usermod','/usr/bin/usermod') if Path(p).is_file()),None)
+        if not pkexec or not usermod:
+            self.error('Permissão USB',f'Correção automática não disponível. '
+                       f'No terminal execute: sudo usermod -aG {group} {user}\\n'
+                       'Depois encerre a sessão e entre novamente.')
+            return
+        def task(j):
+            j.emit(f'Solicitando autenticação para incluir {user} no grupo {group}.')
+            j.cmd([pkexec,usermod,'-aG',group,user],120)
+            j.emit(f'Grupo {group} adicionado ao usuário {user}. '
+                   'É necessário ENCERRAR A SESSÃO e entrar novamente antes de atualizar firmware.')
+        def done(ok,msg):
+            if ok:
+                QMessageBox.information(self,'Permissões atualizadas',
+                    f'Usuário incluído no grupo {group}.\\n\\n'
+                    'Encerre a sessão do Bazzite/CachyOS e entre novamente. '
+                    'Depois teste a porta USB e clique em Atualizar firmware.')
+        self.run_job('Corrigir permissões de '+port,task,done)
+    except Exception as e:
+        self.error('Permissão USB',str(e))
  def run_job(self,label,fn,done=None,progressbar=None):
     if self.job and self.job.isRunning():self.error('Operação em andamento','Conclua a operação anterior.');return
     self.log('Início: '+label)
@@ -426,15 +497,26 @@ class Window(QMainWindow):
  def flash(self):
     try:port=self.usb()
     except Exception as e:self.error('Placa não conectada',str(e));self.page(2);return
+    allowed,detail=usb_access(port)
+    self.log('Pré-verificação USB: '+detail)
+    if not allowed:
+        self.error('Permissão USB necessária',detail)
+        self.page(2)
+        return
     if QMessageBox.question(self,'Atualizar firmware',f'Confirmar gravação no ESP32-C3 conectado em {port}?',QMessageBox.Yes|QMessageBox.No,QMessageBox.No)!=QMessageBox.Yes:return
     self.progress.setValue(0);self.flash_status.setText('Preparando firmware...')
     self.flash_button.setEnabled(False)
     def task(j):
+      allowed,detail=usb_access(port)
+      if not allowed:
+        raise RuntimeError('Acesso USB indisponível antes da compilação: '+detail)
       if not FIRMWARE.exists():
         j.emit('Firmware não encontrado localmente: compilação automática iniciada.')
         j.cmd(['bash',str(BASE/'prepare-firmware.sh')],1500)
       if not FIRMWARE.exists():raise RuntimeError('Arquivo de firmware não foi gerado.')
       if not Path(port).exists():raise RuntimeError('A placa foi desconectada.')
+      allowed,detail=usb_access(port)
+      if not allowed:raise RuntimeError('Acesso USB indisponível após compilação: '+detail)
       _,active=command(['systemctl','--user','is-active',UNIT],8)
       restore=(active=='active')
       if restore:j.cmd(['systemctl','--user','stop',UNIT])
