@@ -201,6 +201,33 @@ def steam_status():
 
 
 
+
+def steam_watch(seconds=10):
+    """Observa consecutivamente a fonte real, um resultado por segundo."""
+    tracker = SteamDownloadTracker()
+    cef = SteamCEFReader()
+    print('Monitorando Steam por 10 segundos (1 consulta por segundo).', flush=True)
+    try:
+        for i in range(seconds):
+            start = time.monotonic()
+            live = cef.scan()
+            fallback = tracker.scan() if live is None else None
+            result = live or fallback
+            if result:
+                speed = (f'{result.speed_mb_s:.1f} MB/s'
+                         if result.speed_mb_s is not None else 'indisponível')
+                print(f'[{i+1:02d}/{seconds}] AppID {result.appid} | '
+                      f'{result.name} | {result.percent}% | {speed} | '
+                      f'{result.source}', flush=True)
+            else:
+                print(f'[{i+1:02d}/{seconds}] Sem download ativo | '
+                      f'{cef.diagnostic.status}', flush=True)
+            time.sleep(max(0.0, INTERVALO-(time.monotonic()-start)))
+    finally:
+        cef.close()
+
+
+
 def main():
     print('Stellar Display - temperaturas + downloads Steam (Bazzite/CachyOS)', flush=True)
     tracker = SteamDownloadTracker()
@@ -287,5 +314,7 @@ def main():
 if __name__ == '__main__':
     if '--steam-status' in sys.argv:
         steam_status()
+    elif '--steam-watch' in sys.argv:
+        steam_watch()
     else:
         main()
