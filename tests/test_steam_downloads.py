@@ -173,6 +173,26 @@ class SteamDownloadTests(unittest.TestCase):
         self.assertEqual(data.appid, "1794680")
         self.assertEqual(data.percent, 1)
 
+    def test_bazzite_shader_preferred_over_inactive_manifest(self):
+        manifest(self.root, "1209490", "Exit the Gungeon",
+                 512812752, 1011679456, 1026)
+        manifest(self.root, "1794680", "Vampire Survivors",
+                 2934016, 502455904, 1042)
+        logdir = self.root / "logs"
+        logdir.mkdir()
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+        (logdir / "content_log.txt").write_text(
+            f"[{stamp}] AppID 1794680 update started : "
+            "download 2934016/502455904, store 0/0, reuse 0/0, "
+            "delta 0/0, stage 3045105/1130055333\n"
+            f"[{stamp}] AppID 1794680 Shader update changed : "
+            "Running Update,Downloading,Staging,\n",
+            encoding="utf-8")
+        info = SteamDownloadTracker().scan()
+        self.assertIsNotNone(info)
+        self.assertEqual(info.appid, "1794680")
+        self.assertEqual(info.name, "Vampire Survivors")
+
     def test_shader_stop_and_resume(self):
         manifest(self.root, "1794680", "Vampire Survivors",
                  2934016, 502455904, 1042)
