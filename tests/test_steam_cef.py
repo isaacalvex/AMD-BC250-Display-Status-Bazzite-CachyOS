@@ -82,6 +82,50 @@ class SteamCEFTests(unittest.TestCase):
         second=reader.scan()
         self.assertEqual(second.percent,78)
 
+    def test_proton_disk_install_90pct_after_download_100pct(self):
+        """Exemplo da tela Steam: os 403MB terminaram, mas disco 90%."""
+        reader=SteamCEFReader()
+        overview={
+            "update_appid":4628710,"update_state":"Updating","paused":False,
+            "update_bytes_downloaded":403000000,
+            "update_bytes_to_download":403000000,
+            "update_bytes_staged":720000000,
+            "update_bytes_to_stage":800000000,
+            "update_network_bytes_per_second":0
+        }
+        sample={"overview":overview,
+                "items":[{"appid":4628710,"active":True,
+                          "completed":False,"paused":False,
+                          "name":"Proton 11.0"},
+                         {"appid":1794680,"active":False,
+                          "name":"Vampire Survivors"}]}
+        reader._query=lambda:sample
+        result=reader.scan()
+        self.assertIsNotNone(result)
+        self.assertEqual(result.appid,"4628710")
+        self.assertEqual(result.phase,"install")
+        self.assertEqual(result.percent,93)
+        self.assertEqual(result.speed_mb_s,0)
+
+        overview["update_bytes_staged"]=792000000
+        result=reader.scan()
+        self.assertEqual(result.percent,99)
+        self.assertEqual(result.phase,"install")
+
+        # Agora Steam confirma o fim e avança ou volta à tela térmica.
+        overview["update_state"]="None"
+        overview["update_appid"]=0
+        sample["items"][0]["active"]=False
+        sample["items"][0]["completed"]=True
+        self.assertIsNone(reader.scan())
+
+    def test_processing_is_used_without_staging_counters(self):
+        o={"update_bytes_to_download":100,
+           "update_bytes_downloaded":100,
+           "update_bytes_to_process":100,
+           "update_bytes_processed":90}
+        self.assertEqual(steam_ui_progress(o),95)
+
     def test_idle_or_paused_is_not_reported_as_download(self):
         reader=SteamCEFReader()
         sample={"overview":{"update_appid":123,"update_state":"Updating",
