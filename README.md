@@ -72,26 +72,26 @@ Para diagnosticar pelo terminal: `ls -l /dev/ttyACM0` e `id -nG`. Antes de prepa
 
 ## Downloads de jogos Steam no display STELLAR
 
-O monitor Python procura Steam instalada no Linux (Bazzite, CachyOS e Flatpak), inclusive bibliotecas em outros discos definidas no arquivo \`libraryfolders.vdf\`. Ele consulta os arquivos **Steam appmanifest_*.acf**, que contêm o nome do jogo e os contadores **BytesDownloaded / BytesToDownload**, e o arquivo **content_log.txt**, que pode registrar a velocidade global de download. Sem API oficial pública de atualização contínua, esses dados podem mudar apenas em intervalos — **a porcentagem pode demorar a atualizar**. O serviço não altera nenhum arquivo da Steam.
+O monitor Python procura Steam instalada no Linux (Bazzite, CachyOS e Flatpak), inclusive bibliotecas em outros discos definidas no arquivo `libraryfolders.vdf`. Ele consulta os arquivos **Steam appmanifest_*.acf**, que contêm o nome do jogo e os contadores **BytesDownloaded / BytesToDownload**, e o arquivo **content_log.txt**, que pode registrar a velocidade global de download. Sem API oficial pública de atualização contínua, esses dados podem mudar apenas em intervalos — **a porcentagem pode demorar a atualizar**. O serviço não altera nenhum arquivo da Steam.
 
 Quando o monitor encontra uma transferência ativa, envia pela mesma USB do ESP32-C3:
 
-\`\`\`text
+```text
 CPU:46.6;GPU:44.0
 DL:1;PCT:65;SPEED:28.4;NAME:Cyberpunk 2077
-\`\`\`
+```
 
-Se a velocidade não estiver disponível, envia \`SPEED:-1\` e o display mostra **-- MB/s**, em vez de inventar um valor. Quando a transferência termina ou é pausada, envia \`DL:0\` e volta às temperaturas. O nome fica **sempre em uma linha**, cortado com \`...\` sem alterar a posição da porcentagem, velocidade ou círculo.
+Se a velocidade não estiver disponível, envia `SPEED:-1` e o display mostra **-- MB/s**, em vez de inventar um valor. Quando a transferência termina ou é pausada, envia `DL:0` e volta às temperaturas. O nome fica **sempre em uma linha**, cortado com `...` sem alterar a posição da porcentagem, velocidade ou círculo.
 
-Para ativar, atualize o app pelo menu **Atualizações → ATUALIZAR → APLICAR ATUALIZAÇÃO**. O serviço \`bc250-display.service\` é reiniciado automaticamente. Em seguida, vá à tela **Firmware → Atualizar firmware**; o app verifica o novo \`.ino\`, recompila somente se necessário e grava o ESP32. **Atualizar apenas o app sem regravar o firmware não cria a nova tela no display.**
+Para ativar, atualize o app pelo menu **Atualizações → ATUALIZAR → APLICAR ATUALIZAÇÃO**. O serviço `bc250-display.service` é reiniciado automaticamente. Em seguida, vá à tela **Firmware → Atualizar firmware**; o app verifica o novo `.ino`, recompila somente se necessário e grava o ESP32. **Atualizar apenas o app sem regravar o firmware não cria a nova tela no display.**
 
 ### Verificação da Steam
 
 Na página **Diagnóstico**, clique em **Verificar downloads Steam**. O app mostrará as bibliotecas encontradas e o download ativo, se houver. No terminal, o mesmo diagnóstico pode ser consultado com:
 
-\`\`\`bash
+```bash
 ~/.local/share/stellar-app-monitor/.venv/bin/python ~/.local/share/stellar-app-monitor/stellar_monitor.py --steam-status
-\`\`\`
+```
 
-Se houver um jogo em download e o diagnóstico não o identificar, confira se a Steam está escrevendo \`appmanifest_*.acf\` e se a biblioteca aparece em \`libraryfolders.vdf\`. A detecção foi desenvolvida com arquivos locais da Steam, e o formato desses arquivos pode mudar em futuras versões do cliente. A leitura da velocidade vem de entradas recentes do log ou da variação do contador de bytes; **não é garantido que corresponda exatamente ao indicador da interface Steam em cada instante**.
+Se houver um jogo em download e o diagnóstico não o identificar, confira se a Steam está escrevendo `appmanifest_*.acf` e se a biblioteca aparece em `libraryfolders.vdf`. A detecção foi desenvolvida com arquivos locais da Steam, e o formato desses arquivos pode mudar em futuras versões do cliente. A leitura da velocidade vem de entradas recentes do log ou da variação do contador de bytes; **não é garantido que corresponda exatamente ao indicador da interface Steam em cada instante**.
 
