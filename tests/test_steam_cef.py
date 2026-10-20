@@ -1,7 +1,9 @@
 """Testes da fonte ao vivo da Steam CEF sem abrir rede nem Steam."""
 import unittest
 
-from steam_cef import SteamCEFReader, steam_ui_progress
+from steam_cef import (
+    SteamCEFReader, steam_ui_progress, _state_is_active, _state_is_install
+)
 
 
 class SteamCEFTests(unittest.TestCase):
@@ -171,6 +173,75 @@ class SteamCEFTests(unittest.TestCase):
         info=reader.scan()
         self.assertIsNotNone(info)
         self.assertIsNone(info.speed_mb_s)
+
+    def test_real_bazzite_street_fighter_state_downloading(self):
+        """Caso observado 13:23:07: CEF indicou downloading, appid 1364780."""
+        reader=SteamCEFReader()
+        sample={
+            "overview":{
+                "update_appid":1364780,
+                "update_state":"downloading",
+                "paused":False,
+                "update_bytes_downloaded":8_000_000_000,
+                "update_bytes_to_download":100_000_000_000,
+                "update_bytes_staged":4_000_000_000,
+                "update_bytes_to_stage":100_000_000_000,
+                "update_network_bytes_per_second":24_500_000
+            },
+            "items":[],
+            "gotOverview":True,
+            "gotItems":False,
+            "overviewAgeMs":180
+        }
+        reader._query=lambda:sample
+        item=reader.scan()
+        self.assertIsNotNone(item)
+        self.assertEqual(item.appid,"1364780")
+        self.assertEqual(item.percent,6)
+        self.assertEqual(item.phase,"download")
+        self.assertEqual(item.speed_mb_s,24.5)
+        self.assertTrue(item.source.startswith("Steam CEF"))
+        sample["overview"]["update_bytes_downloaded"]=24_000_000_000
+        sample["overview"]["update_bytes_staged"]=18_000_000_000
+        sample["overview"]["update_network_bytes_per_second"]=30_100_000
+        updated=reader.scan()
+        self.assertEqual(updated.percent,21)
+        self.assertEqual(updated.speed_mb_s,30.1)
+
+    def test_cef_install_state_with_zero_network_speed(self):
+        reader=SteamCEFReader()
+        reader._query=lambda:{
+            "overview":{
+                "update_appid":1364780,
+                "update_state":"staging",
+                "paused":False,
+                "update_bytes_downloaded":100,
+                "update_bytes_to_download":100,
+                "update_bytes_staged":85,
+                "update_bytes_to_stage":100,
+                "update_network_bytes_per_second":0
+            },
+            "items":[],"gotOverview":True,"overviewAgeMs":100
+        }
+        item=reader.scan()
+        self.assertIsNotNone(item)
+        self.assertEqual(item.appid,"1364780")
+        self.assertEqual(item.phase,"install")
+        self.assertEqual(item.percent,93)
+        self.assertEqual(item.speed_mb_s,0.0)
+
+    def test_various_steam_work_states_and_queued_states(self):
+        for state in ("downloading","staging","installing","committing",
+                      "verifying_installed","processing","updating",
+                      "starting","stopping","preallocating"):
+            with self.subTest(state=state):
+                self.assertTrue(_state_is_active(state))
+        for state in ("none","paused","queued","completed","",
+                      "update_queued"):
+            with self.subTest(state=state):
+                self.assertFalse(_state_is_active(state))
+        self.assertTrue(_state_is_install("Verifying Installed"))
+        self.assertFalse(_state_is_install("downloading"))
 
     def test_idle_or_paused_is_not_reported_as_download(self):
         reader=SteamCEFReader()
