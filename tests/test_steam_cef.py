@@ -2,7 +2,8 @@
 import unittest
 
 from steam_cef import (
-    SteamCEFReader, steam_ui_progress, _state_is_active, _state_is_install
+    SteamCEFReader, steam_ui_progress, steam_ui_progress_precise,
+    _state_is_active, _state_is_install
 )
 
 
@@ -242,6 +243,47 @@ class SteamCEFTests(unittest.TestCase):
                 self.assertFalse(_state_is_active(state))
         self.assertTrue(_state_is_install("Verifying Installed"))
         self.assertFalse(_state_is_install("downloading"))
+
+    def test_large_download_centiprogress_instead_of_stuck_integer(self):
+        """Percentual 8,01% -> 8,04% precisa ser preservado para o anel."""
+        reader=SteamCEFReader()
+        overview={
+            "update_appid":1364780,"update_state":"downloading",
+            "paused":False,
+            "update_bytes_to_download":100_000_000_000,
+            "update_bytes_downloaded":8_010_000_000,
+            "update_network_bytes_per_second":22_000_000
+        }
+        reader._query=lambda:{"overview":overview,"gotOverview":True,
+                              "items":[],"overviewAgeMs":100}
+        a=reader.scan()
+        self.assertEqual(a.percent,8)
+        self.assertEqual(a.percent_precise,8.01)
+        overview["update_bytes_downloaded"]=8_040_000_000
+        b=reader.scan()
+        self.assertEqual(b.percent,8)
+        self.assertEqual(b.percent_precise,8.04)
+        self.assertEqual(steam_ui_progress_precise(overview),8.04)
+
+    def test_calculate_rate_from_fresh_cef_delta_if_native_rate_is_zero(self):
+        import time
+        reader=SteamCEFReader()
+        overview={
+            "update_appid":1364780,"update_state":"downloading",
+            "paused":False,
+            "update_bytes_to_download":100_000_000_000,
+            "update_bytes_downloaded":8_000_000_000,
+            "update_network_bytes_per_second":0
+        }
+        reader._query=lambda:{"overview":overview,"gotOverview":True,
+                              "items":[],"overviewAgeMs":100}
+        reader.scan()
+        reader._last_counter=("1364780",8_000_000_000,time.monotonic()-1)
+        overview["update_bytes_downloaded"]=8_025_000_000
+        result=reader.scan()
+        self.assertIsNotNone(result)
+        self.assertGreater(result.speed_mb_s,20)
+        self.assertLess(result.speed_mb_s,30)
 
     def test_idle_or_paused_is_not_reported_as_download(self):
         reader=SteamCEFReader()
