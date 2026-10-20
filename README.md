@@ -210,3 +210,18 @@ Ao atualizar o aplicativo, com a Steam baixando ou instalando, execute **Diagnó
 ```
 
 O esperado é `Steam CEF (...)` como origem. A fonte CEF lê a cada ciclo os bytes de download, staging e taxa de rede informados pela Steam. O firmware ESP32 não precisa ser regravado. Se a porcentagem permanecer parada, use `--cef-debug` para verificar se os campos realmente mudam; a frequência de consulta não garante que o cliente atualize os dados a cada segundo.
+
+
+## Porcentagem centesimal 0,01% e MB/s via Steam CEF
+
+A leitura anterior arredondava o progresso para **1% inteiro**. Em jogos grandes, o número poderia ficar parado muito tempo mesmo com transferência real. Agora o serviço preserva `percent_precise` com **duas casas decimais** e transmite ambos os campos:
+
+```text
+DL:1;PCTF:8.37;PCT:8;SPEED:28.4;NAME:Street Fighter 6
+```
+
+O campo `PCT` continua compatível com o firmware antigo. Para **mostrar 8,37% e o anel com 360 pontos**, é obrigatório regravar o firmware do repositório **[AMD-BC250-Display-Status](https://github.com/isaacalvex/AMD-BC250-Display-Status)**. Use a página **Firmware → Preparar/Atualizar → Gravar** do Stellar App Monitor; `prepare-firmware.sh` baixa a versão atual e só reutiliza o BIN se o hash for idêntico. **Não basta atualizar apenas o serviço Python para exibir decimais.**
+
+Em **Diagnóstico → Testar tela de download no ESP32**, o teste envia valores de **65,41% até 65,46%** e velocidades **28,4 a 28,9 MB/s** um por segundo. Com firmware antigo aparece apenas `65%`; com firmware novo aparecem as duas casas.
+
+A velocidade utiliza `SteamClient.Downloads.update_network_bytes_per_second`; quando ela é ausente/zero mas dois snapshots **CEF atuais** comprovam aumento nos bytes baixados, calcula-se uma taxa média entre as amostras CEF. **Não** se usa o delta do arquivo appmanifest para alegar velocidade de rede instantânea. Se o Steam CEF permanecer desatualizado, nem o firmware nem o monitor poderão fabricar progresso real: use `--cef-debug` e confira `update_bytes_downloaded`, `update_bytes_staged`, `update_network_bytes_per_second` e `overviewAgeMs` em quatro amostras consecutivas.
