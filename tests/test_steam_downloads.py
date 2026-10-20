@@ -312,6 +312,25 @@ class SteamDownloadTests(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result.appid,"4628710")
 
+    def test_top_level_manifest_counters_ignore_nested_dlc(self):
+        """Downloads de DLC não sobrescrevem os contadores do jogo."""
+        path=self.root / "steamapps/appmanifest_999999.acf"
+        path.write_text(
+            '"AppState"\n{\n'
+            '"appid" "999999"\n"name" "Jogo com DLC"\n'
+            '"StateFlags" "1048576"\n'
+            '"BytesToDownload" "100"\n'
+            '"BytesDownloaded" "60"\n'
+            '"DlcDownloads"\n{\n'
+            '"456" \n{\n'
+            '"BytesToDownload" "9000"\n'
+            '"BytesDownloaded" "1"\n'
+            '}\n}\n}\n', encoding="utf-8")
+        item=SteamDownloadTracker().scan()
+        self.assertIsNotNone(item)
+        self.assertEqual(item.name,"Jogo com DLC")
+        self.assertEqual(item.percent,60)
+
     def test_secondary_library(self):
         extra = Path(self.tmp.name) / "games"
         manifest(extra, "60", "Jogo externo", 25, 100, 1048576)
