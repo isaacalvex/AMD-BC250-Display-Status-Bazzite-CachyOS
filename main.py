@@ -264,6 +264,7 @@ class Window(QMainWindow):
     w=QWidget();lay=QVBoxLayout(w);lay.setContentsMargins(0,0,0,0)
     box=self.panel(lay,'Diagnóstico detalhado')
     self.button(box,'Atualizar verificação',self.diagnose)
+    self.button(box,'Verificar downloads Steam',self.steam_diagnose)
     self.diag=QPlainTextEdit();self.diag.setReadOnly(True);box.addWidget(self.diag)
     self.button(box,'Exibir logs recentes do serviço',self.service_logs)
     lay.addStretch();self.stack.addWidget(w)
@@ -501,6 +502,17 @@ class Window(QMainWindow):
     a,an=sensor('k10temp');b,bn=sensor('amdgpu')
     self.diag.setPlainText(f'CPU: {a} °C ({an})\nGPU: {b} °C ({bn})\nServiço: {UNIT_PATH}\nPortas USB:\n'+'\n'.join(x.device+' '+x.description for x in ports()))
     self.log('Diagnóstico dos sensores e portas atualizado.')
+ def steam_diagnose(self):
+    result={'text':''}
+    def task(j):
+        rc,out=command([sys.executable,str(BASE/'stellar_monitor.py'),'--steam-status'],25)
+        result['text']=out
+        j.emit(out or 'Nenhuma informação Steam encontrada.')
+        if rc:raise RuntimeError('Diagnóstico da Steam falhou: '+out[-600:])
+    def finished(ok,msg):
+        self.diag.setPlainText(result['text'] or ('Falha: '+msg))
+    self.run_job('Verificar downloads Steam',task,finished)
+
  def service_logs(self):
     _,out=command(['journalctl','--user','-u',UNIT,'-n','50','--no-pager'],10)
     self.diag.setPlainText(out);self.log('Logs recentes do serviço carregados.')
