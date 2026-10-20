@@ -324,6 +324,31 @@ class SteamCEFTests(unittest.TestCase):
         self.assertIsNone(reader.scan())
         self.assertIsNone(reader.live_metrics)
 
+    def test_active_overview_uses_matching_steam_item_even_without_active_flag(self):
+        """O único item do CEF pode não ter active=True em certos builds."""
+        reader=SteamCEFReader()
+        item={"appid":1364780,"active":False,"paused":False,
+              "downloaded_bytes":36000000000,"total_bytes":100000000000,
+              "name":"Street Fighter 6"}
+        reader._query=lambda:{
+            "overview":{
+                "update_appid":1364780,
+                "update_state":"Downloading",
+                "update_network_bytes_per_second":36828172
+            },
+            "gotOverview":True,"gotItems":True,"overviewAgeMs":391,
+            "items":[item]
+        }
+        result=reader.scan()
+        self.assertIsNotNone(result)
+        self.assertEqual(result.appid,"1364780")
+        self.assertEqual(result.percent,36)
+        self.assertEqual(result.percent_precise,36.0)
+        self.assertAlmostEqual(result.speed_mb_s,36.8)
+        item["downloaded_bytes"]=36550000000
+        updated=reader.scan()
+        self.assertEqual(updated.percent_precise,36.55)
+
     def test_idle_or_paused_is_not_reported_as_download(self):
         reader=SteamCEFReader()
         sample={"overview":{"update_appid":123,"update_state":"Updating",
