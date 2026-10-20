@@ -356,7 +356,7 @@ class SteamCEFTests(unittest.TestCase):
             "update_state":"Preallocating",
             "progress":0.3472,
             "paused":False,
-            "update_network_bytes_per_second":0,
+            "update_network_bytes_per_second":357873,
         }
         reader._query=lambda:{
             "overview":overview, "gotOverview":True, "items":[],
@@ -366,6 +366,7 @@ class SteamCEFTests(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result.percent_precise,34.72)
         self.assertEqual(result.phase,"install")
+        self.assertAlmostEqual(result.speed_mb_s,0.4)
         self.assertIn("progresso nativo",result.source)
         overview["progress"]=0.3581
         result=reader.scan()
