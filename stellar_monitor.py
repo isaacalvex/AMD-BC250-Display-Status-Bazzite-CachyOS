@@ -217,6 +217,7 @@ def cef_debug():
     Somente campos de downloads; não extrai cookies, conta, sessão ou URL.
     """
     import json
+    from steam_cef import _native_progress_precise
     cef=SteamCEFReader()
     print("=== Diagnóstico Steam CEF — apenas telemetria de download ===", flush=True)
     try:
@@ -236,6 +237,8 @@ def cef_debug():
                     "overviewAgeMs":result.get("overviewAgeMs"),
                     "downloading":result.get("downloading"),
                     "overview":result.get("overview",{}),
+                    "nativePercentParsed":_native_progress_precise(
+                        result.get("overview",{})),
                     # Nomes dos campos: verifica se o build atual expõe
                     # contadores com nomes diferentes dos tipos conhecidos.
                     "overviewKeys":result.get("overviewKeys",[]),
