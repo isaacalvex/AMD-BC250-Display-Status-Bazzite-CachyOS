@@ -265,6 +265,7 @@ class Window(QMainWindow):
     box=self.panel(lay,'Diagnóstico detalhado')
     self.button(box,'Atualizar verificação',self.diagnose)
     self.button(box,'Verificar downloads Steam',self.steam_diagnose)
+    self.button(box,'Monitorar Steam por 10 segundos',self.steam_watch_diagnose)
     self.button(box,'TESTAR TELA DE DOWNLOAD NO ESP32',self.test_download_display)
     self.diag=QPlainTextEdit();self.diag.setReadOnly(True);box.addWidget(self.diag)
     self.button(box,'Exibir logs recentes do serviço',self.service_logs)
@@ -622,6 +623,19 @@ class Window(QMainWindow):
                 'Se a tela não mudou, o problema está no firmware, '
                 'na serial ou no protocolo, não na leitura da Steam.')
     self.run_job('Testar tela de download no ESP32',task,finished)
+
+ def steam_watch_diagnose(self):
+    result={'text':''}
+    def task(j):
+        j.emit('Consultando Steam uma vez por segundo (10 amostras).')
+        rc,out=command([sys.executable,str(BASE/'stellar_monitor.py'),'--steam-watch'],24)
+        result['text']=out
+        if out:j.emit(out)
+        if rc:raise RuntimeError('Monitoramento Steam falhou: '+out[-600:])
+    def finished(ok,msg):
+        self.diag.setPlainText(result['text'] if ok else
+                               result['text']+'\\nERRO: '+msg)
+    self.run_job('Monitorar Steam por 10 segundos',task,finished)
 
  def steam_diagnose(self):
     result={'text':''}
