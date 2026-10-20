@@ -38,7 +38,9 @@ _JS = r"""(async () => {
   if (typeof d.GetDownloadOverview === 'function') {
     try { o = await d.GetDownloadOverview() || o; } catch (e) {}
   }
-  if (!o) return {pending:true};
+  // A lista de itens também contém bytes por AppID. Algumas versões
+  // do Steam notificam primeiro a lista e depois a visão geral.
+  if (!o && !cache.items.length) return {pending:true};
   const keys = [
     'update_appid','update_state','paused','update_bytes_downloaded',
     'update_bytes_to_download','update_bytes_staged','update_bytes_to_stage',
@@ -46,9 +48,10 @@ _JS = r"""(async () => {
     'update_network_bytes_per_second'
   ];
   const overview = {};
-  for (const k of keys) overview[k] = o[k];
+  if (o) for (const k of keys) overview[k] = o[k];
   const items = (cache.items || []).slice(0,30).map(x => ({
-    appid:x.appid, active:x.active, paused:x.paused, name:x.name
+    appid:x.appid, active:x.active, paused:x.paused, name:x.name,
+    downloaded_bytes:x.downloaded_bytes, total_bytes:x.total_bytes
   }));
   return {overview, items};
 })()"""
@@ -193,39 +196,67 @@ class SteamCEFReader:
             return None
 
     def scan(self) -> Download | None:
+        """Seleciona qualquer AppID ativo no Steam, não há títulos fixos."""
         data=self._query()
-        if not data or "overview" not in data:
+        if not isinstance(data,dict) or "overview" not in data:
             return None
-        o=data["overview"]
-        if not isinstance(o,dict):
-            return None
+        overview=data["overview"]
+        o=overview if isinstance(overview,dict) else {}
+        items=[item for item in data.get("items",[])
+               if isinstance(item,dict)]
+        active_item=next((
+            item for item in items
+            if item.get("active") and not item.get("paused")
+        ),None)
         try:
             appid=str(int(o.get("update_appid") or 0))
             paused=bool(o.get("paused"))
             state=str(o.get("update_state") or "").lower()
-        except (TypeError,ValueError):
+        except (TypeError,ValueError,OverflowError):
             return None
-        if appid=="0" or paused or state not in ("updating","starting"):
-            self.diagnostic=CEFDiagnostic("CEF conectado, nenhum download ativo",self._socket_port)
+        if appid=="0" and active_item:
+            try: appid=str(int(active_item["appid"]))
+            except (ValueError,TypeError,OverflowError): return None
+
+        if appid=="0" or (paused and not active_item) or (
+                state not in ("updating","starting") and not active_item):
+            self.diagnostic=CEFDiagnostic(
+                "CEF conectado, nenhum download ativo",self._socket_port)
             return None
-        pct=steam_ui_progress(o)
+        item=next((x for x in items
+                   if str(x.get("appid"))==appid),active_item)
+        pct=steam_ui_progress(o) if state in ("updating","starting") else None
+        if pct is None and item is not None:
+            try:
+                total=max(0,int(item.get("total_bytes") or 0))
+                completed=max(0,int(item.get("downloaded_bytes") or 0))
+                if total:
+                    pct=max(0,min(99,round(completed*100/total)))
+            except (TypeError,ValueError,OverflowError):
+                pass
         if pct is None:
-            self.diagnostic=CEFDiagnostic("CEF conectado, progresso indisponível",self._socket_port)
+            self.diagnostic=CEFDiagnostic(
+                "CEF conectado, progresso indisponível",self._socket_port)
             return None
+        rate=o.get("update_network_bytes_per_second")
         try:
-            speed=max(0,float(o.get("update_network_bytes_per_second") or 0))/1_000_000
-        except (TypeError,ValueError):
+            speed=max(0,float(rate))/1_000_000 if rate is not None else None
+        except (TypeError,ValueError,OverflowError):
             speed=None
-        name=None
-        for x in data.get("items",[]):
-            if isinstance(x,dict) and str(x.get("appid"))==appid and x.get("name"):
-                name=str(x["name"])[:120]
-                break
+        name=str(item.get("name") or "")[:120] if item else ""
         if not name:
             name=_steam_app_name(appid,self._name_cache)
-        self.diagnostic=CEFDiagnostic(f"CEF ao vivo: {name} {pct}%",self._socket_port)
+        try:
+            completed=int(o.get("update_bytes_downloaded") or
+                          (item or {}).get("downloaded_bytes") or 0)
+            total=int(o.get("update_bytes_to_download") or
+                      (item or {}).get("total_bytes") or 0)
+        except (TypeError,ValueError,OverflowError):
+            completed,total=0,0
+        self.diagnostic=CEFDiagnostic(
+            f"CEF ao vivo: {name} (AppID {appid}) {pct}%",self._socket_port)
         return Download(
-            appid=appid,name=name,percent=pct,speed_mb_s=round(speed,1) if speed is not None else None,
-            completed=int(o.get("update_bytes_downloaded") or 0),
-            total=int(o.get("update_bytes_to_download") or 0),
-            source="Steam CEF (tempo real; progresso total estimado)" )
+            appid=appid,name=name,percent=pct,
+            speed_mb_s=round(speed,1) if speed is not None else None,
+            completed=completed,total=total,
+            source="Steam CEF (tempo real; progresso total estimado)")
