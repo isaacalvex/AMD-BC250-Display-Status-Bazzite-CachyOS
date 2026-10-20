@@ -105,6 +105,28 @@ class SteamDownloadTests(unittest.TestCase):
             encoding="utf-8")
         self.assertIsNone(SteamDownloadTracker().scan())
 
+    def test_long_download_without_new_events(self):
+        manifest(self.root, "91", "Download grande", 25, 100, 2)
+        (self.root / "logs").mkdir()
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S",
+                              time.localtime(time.time() - 35 * 60))
+        (self.root / "logs/content_log.txt").write_text(
+            f"[{stamp}] AppID 91 update changed : Running Update,Downloading,Staging,\n",
+            encoding="utf-8")
+        item = SteamDownloadTracker().scan()
+        self.assertIsNotNone(item)
+        self.assertEqual(item.name, "Download grande")
+
+    def test_staging_is_not_active_download(self):
+        manifest(self.root, "92", "Terminou transferencia", 25, 100, 2)
+        (self.root / "logs").mkdir()
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+        (self.root / "logs/content_log.txt").write_text(
+            f"[{stamp}] AppID 92 update changed : Running Update,Downloading,\n"
+            f"[{stamp}] AppID 92 update changed : Running Update,Staging,\n",
+            encoding="utf-8")
+        self.assertIsNone(SteamDownloadTracker().scan())
+
     def test_secondary_library(self):
         extra = Path(self.tmp.name) / "games"
         manifest(extra, "60", "Jogo externo", 25, 100, 1048576)
