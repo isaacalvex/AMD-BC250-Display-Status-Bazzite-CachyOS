@@ -95,6 +95,39 @@ _JS = r"""(async () => {
   };
 })()"""
 
+# SteamClient.Downloads pode usar estados mais detalhados conforme a versão
+# do cliente. O Bazzite reportou literalmente state="downloading" com
+# update_appid=1364780 (Street Fighter 6) e contadores disponíveis.
+_ACTIVE_UPDATE_STATES = frozenset({
+    "starting", "updating", "stopping", "running",
+    "downloading", "staging", "installing", "processing",
+    "verifying", "validating", "committing", "preallocating",
+    "reconfiguring", "unpacking", "patching", "preparing",
+    "allocating", "finalizing",
+})
+_INSTALL_UPDATE_STATES = frozenset({
+    "staging", "installing", "processing", "verifying",
+    "validating", "committing", "preallocating", "reconfiguring",
+    "unpacking", "patching", "allocating", "finalizing",
+})
+
+
+def _state_is_active(state: str) -> bool:
+    """Estado em execução; evita selecionar aplicações apenas na fila."""
+    normalized = state.strip().lower().replace("-", "_").replace(" ", "_")
+    if normalized in _ACTIVE_UPDATE_STATES:
+        return True
+    # Aceita fases mais específicas, por exemplo "verifying_installed".
+    return any(normalized.startswith(phase + "_")
+               for phase in _ACTIVE_UPDATE_STATES)
+
+
+def _state_is_install(state: str) -> bool:
+    normalized = state.strip().lower().replace("-", "_").replace(" ", "_")
+    return any(normalized == phase or normalized.startswith(phase + "_")
+               for phase in _INSTALL_UPDATE_STATES)
+
+
 @dataclass(frozen=True)
 class CEFDiagnostic:
     status: str
@@ -276,10 +309,11 @@ class SteamCEFReader:
             try: appid=str(int(active_item["appid"]))
             except (ValueError,TypeError,OverflowError): return None
 
-        # Updating e Stopping continuam durante instalação/validação.
-        ongoing=("updating","starting","stopping")
+        # Estado "downloading" foi observado no Bazzite real e deve ser
+        # considerado ativo, mesmo quando a lista de itens está vazia.
+        ongoing=_state_is_active(state)
         if (appid=="0" or paused or
-                (state not in ongoing and not active_item)):
+                (not ongoing and not active_item)):
             self.diagnostic=CEFDiagnostic(
                 f"CEF conectado, sem tarefa ativa (state={state}, "
                 f"appid={appid}, items_ativos={int(active_item is not None)})",
@@ -287,7 +321,7 @@ class SteamCEFReader:
             return None
         item=next((x for x in items
                    if str(x.get("appid"))==appid),None)
-        pct=steam_ui_progress(o) if state in ongoing else None
+        pct=steam_ui_progress(o) if ongoing else None
         if pct is None and item is not None:
             try:
                 total=max(0,int(item.get("total_bytes") or 0))
@@ -316,6 +350,7 @@ class SteamCEFReader:
         except (TypeError,ValueError,OverflowError):
             network_total,network_done=0,0
         installing=bool(
+            _state_is_install(state) or
             (network_total and network_done >= network_total) or
             (network_total == 0 and (o.get("update_bytes_to_stage") or
                                      o.get("update_bytes_to_process"))))
