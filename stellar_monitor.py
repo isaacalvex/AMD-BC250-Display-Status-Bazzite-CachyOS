@@ -203,10 +203,12 @@ def steam_status():
 
 
 def steam_watch(seconds=10):
-    """Observa consecutivamente a fonte real, um resultado por segundo."""
+    """Uma amostra por segundo, distinguindo fonte viva de arquivos defasados."""
     tracker = SteamDownloadTracker()
     cef = SteamCEFReader()
     print('Monitorando Steam por 10 segundos (1 consulta por segundo).', flush=True)
+    snapshots=[]
+    using_files=False
     try:
         for i in range(seconds):
             start = time.monotonic()
@@ -214,17 +216,27 @@ def steam_watch(seconds=10):
             fallback = tracker.scan() if live is None else None
             result = live or fallback
             if result:
+                using_files = using_files or live is None
                 speed = (f'{result.speed_mb_s:.1f} MB/s'
-                         if result.speed_mb_s is not None else 'indisponível')
+                         if result.speed_mb_s is not None else '-- MB/s (sem medição)')
                 print(f'[{i+1:02d}/{seconds}] AppID {result.appid} | '
                       f'{result.name} | {result.percent}% | {speed} | '
                       f'etapa={result.phase} | {result.source}', flush=True)
+                snapshots.append((result.appid,result.percent,result.speed_mb_s))
             else:
                 print(f'[{i+1:02d}/{seconds}] Sem download ativo | '
                       f'{cef.diagnostic.status}', flush=True)
             time.sleep(max(0.0, INTERVALO-(time.monotonic()-start)))
     finally:
         cef.close()
+    if using_files:
+        print('AVISO: CEF indisponível: appmanifest/content_log são snapshots '
+              'e NÃO fornecem progresso nem MB/s garantidos em tempo real.',
+              flush=True)
+    if len(snapshots) >= 5 and len(set(snapshots)) == 1:
+        print('AVISO: Todas as leituras tiveram valores IDÊNTICOS. '
+              'O ESP32 está recebendo os mesmos dados; não há confirmação '
+              'de progresso ao vivo nesta fonte.', flush=True)
 
 
 
