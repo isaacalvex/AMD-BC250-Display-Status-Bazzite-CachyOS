@@ -45,7 +45,7 @@ _JS = r"""(async () => {
     'update_appid','update_state','paused','update_bytes_downloaded',
     'update_bytes_to_download','update_bytes_staged','update_bytes_to_stage',
     'update_bytes_processed','update_bytes_to_process',
-    'update_network_bytes_per_second'
+    'update_network_bytes_per_second','update_disc_bytes_per_second'
   ];
   const overview = {};
   if (o) for (const k of keys) overview[k] = o[k];
@@ -64,22 +64,28 @@ class CEFDiagnostic:
 
 
 def steam_ui_progress(overview: dict) -> int | None:
-    """Progresso geral baseado em download + staging, sem números inventados."""
+    """Progresso geral: bytes baixados + preparação/instalação em disco.
+
+    Processamento é usado como alternativa à preparação quando não há
+    contador de staging; não se somam as duas fases indiscriminadamente.
+    """
     try:
         network_total = max(0, int(overview.get("update_bytes_to_download") or 0))
-        staged_total = max(0, int(overview.get("update_bytes_to_stage") or 0))
         network_done = max(0, int(overview.get("update_bytes_downloaded") or 0))
+        staged_total = max(0, int(overview.get("update_bytes_to_stage") or 0))
         staged_done = max(0, int(overview.get("update_bytes_staged") or 0))
+        processed_total = max(0, int(overview.get("update_bytes_to_process") or 0))
+        processed_done = max(0, int(overview.get("update_bytes_processed") or 0))
     except (TypeError, ValueError, OverflowError):
         return None
-    total = network_total + staged_total
+    disk_total = staged_total or processed_total
+    disk_done = staged_done if staged_total else processed_done
+    total = network_total + disk_total
     if total <= 0:
         return None
-    # O progresso visível no Steam agrega fases; conforme atualização/versão,
-    # pode haver uma terceira etapa de processamento. Sem API pública de
-    # porcentagem final, esta é uma estimativa baseada em valores AO VIVO.
-    done = min(network_done,network_total) + min(staged_done,staged_total)
-    return max(0,min(99,round(100*done/total)))
+    completed = min(network_done, network_total) + min(disk_done, disk_total)
+    # Enquanto Steam estiver trabalhando, não marcar 100% prematuramente.
+    return max(0, min(99, round(100 * completed / total)))
 
 
 def _steam_app_name(appid: str, cache: dict[str,str]) -> str:
@@ -218,14 +224,16 @@ class SteamCEFReader:
             try: appid=str(int(active_item["appid"]))
             except (ValueError,TypeError,OverflowError): return None
 
-        if appid=="0" or (paused and not active_item) or (
-                state not in ("updating","starting") and not active_item):
+        # Updating e Stopping continuam durante instalação/validação.
+        ongoing=("updating","starting","stopping")
+        if (appid=="0" or paused or
+                (state not in ongoing and not active_item)):
             self.diagnostic=CEFDiagnostic(
                 "CEF conectado, nenhum download ativo",self._socket_port)
             return None
         item=next((x for x in items
                    if str(x.get("appid"))==appid),None)
-        pct=steam_ui_progress(o) if state in ("updating","starting") else None
+        pct=steam_ui_progress(o) if state in ongoing else None
         if pct is None and item is not None:
             try:
                 total=max(0,int(item.get("total_bytes") or 0))
@@ -243,6 +251,16 @@ class SteamCEFReader:
             speed=max(0,float(rate))/1_000_000 if rate is not None else None
         except (TypeError,ValueError,OverflowError):
             speed=None
+        try:
+            network_total=int(o.get("update_bytes_to_download") or 0)
+            network_done=int(o.get("update_bytes_downloaded") or 0)
+        except (TypeError,ValueError,OverflowError):
+            network_total,network_done=0,0
+        installing=bool(network_total and network_done >= network_total)
+        # A velocidade de REDE durante a instalação é zero, mesmo quando
+        # a transferência em disco está progredindo.
+        if installing:
+            speed=0.0
         name=str(item.get("name") or "")[:120] if item else ""
         if not name:
             name=_steam_app_name(appid,self._name_cache)
@@ -259,4 +277,5 @@ class SteamCEFReader:
             appid=appid,name=name,percent=pct,
             speed_mb_s=round(speed,1) if speed is not None else None,
             completed=completed,total=total,
-            source="Steam CEF (tempo real; progresso total estimado)")
+            source="Steam CEF (tarefa completa; progresso geral estimado)",
+            phase="install" if installing else "download")
