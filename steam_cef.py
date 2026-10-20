@@ -466,10 +466,9 @@ class SteamCEFReader:
             (network_total and network_done >= network_total) or
             (network_total == 0 and (o.get("update_bytes_to_stage") or
                                      o.get("update_bytes_to_process"))))
-        # A velocidade de REDE durante a instalação é zero, mesmo quando
-        # a transferência em disco está progredindo.
-        if installing:
-            speed=0.0
+        # A velocidade de rede reportada pela Steam tem prioridade também
+        # nas fases de preparação e instalação. Não forçar 0 MB/s quando
+        # o próprio CEF acabou de medir transferência diferente de zero.
         name=str(item.get("name") or "")[:120] if item else ""
         if not name:
             name=_steam_app_name(appid,self._name_cache)
