@@ -265,6 +265,7 @@ class Window(QMainWindow):
     box=self.panel(lay,'Diagnóstico detalhado')
     self.button(box,'Atualizar verificação',self.diagnose)
     self.button(box,'Verificar downloads Steam',self.steam_diagnose)
+    self.button(box,'TESTAR TELA DE DOWNLOAD NO ESP32',self.test_download_display)
     self.diag=QPlainTextEdit();self.diag.setReadOnly(True);box.addWidget(self.diag)
     self.button(box,'Exibir logs recentes do serviço',self.service_logs)
     lay.addStretch();self.stack.addWidget(w)
@@ -502,6 +503,61 @@ class Window(QMainWindow):
     a,an=sensor('k10temp');b,bn=sensor('amdgpu')
     self.diag.setPlainText(f'CPU: {a} °C ({an})\nGPU: {b} °C ({bn})\nServiço: {UNIT_PATH}\nPortas USB:\n'+'\n'.join(x.device+' '+x.description for x in ports()))
     self.log('Diagnóstico dos sensores e portas atualizado.')
+ def test_download_display(self):
+    try:
+        port=self.usb()
+        allowed,detail=usb_access(port)
+        if not allowed:raise RuntimeError(detail)
+    except Exception as e:
+        self.error('Teste da tela',str(e))
+        self.page(2)
+        return
+    if QMessageBox.question(
+        self,'Testar tela de download',
+        'Este teste interromperá temporariamente o envio das temperaturas '
+        'por aproximadamente seis segundos para apresentar uma tela de download '
+        'fictícia. Ao terminar, o serviço será restaurado. Continuar?',
+        QMessageBox.Yes|QMessageBox.No,QMessageBox.No
+    ) != QMessageBox.Yes:
+        return
+
+    def task(j):
+        import serial
+        rc,active=command(['systemctl','--user','is-active',UNIT],8)
+        was_active=(active=='active')
+        if was_active:
+            j.cmd(['systemctl','--user','stop',UNIT],20)
+        try:
+            j.emit('Abrindo porta '+port+' para um teste visual (sem gravar firmware).')
+            with serial.Serial(port,BAUDRATE if 'BAUDRATE' in globals() else 115200,
+                               timeout=1,write_timeout=2) as ser:
+                time.sleep(2)
+                ser.reset_output_buffer()
+                sample=b'DL:1;PCT:65;SPEED:28.4;NAME:TESTE STELLAR\\n'
+                for i in range(6):
+                    ser.write(sample)
+                    ser.flush()
+                    j.emit('Pacote DL:1 enviado, exemplo 65% — '+str(i+1)+'/6')
+                    time.sleep(1)
+                ser.write(b'DL:0\\n')
+                ser.flush()
+                j.emit('Pacote DL:0 enviado; voltando para as temperaturas.')
+        finally:
+            if was_active:
+                rc,out=command(['systemctl','--user','start',UNIT],20)
+                j.emit('Serviço restaurado.' if rc==0
+                       else 'ATENÇÃO: não foi possível restaurar o serviço: '+out)
+
+    def finished(ok,msg):
+        if ok:
+            QMessageBox.information(
+                self,'Teste enviado',
+                'O teste foi enviado pelo USB. O ESP32 deveria ter exibido '
+                'TESTE STELLAR / 65% / 28,4 MB/s. '
+                'Se a tela não mudou, o problema está no firmware, '
+                'na serial ou no protocolo, não na leitura da Steam.')
+    self.run_job('Testar tela de download no ESP32',task,finished)
+
  def steam_diagnose(self):
     result={'text':''}
     def task(j):
