@@ -517,9 +517,8 @@ class Window(QMainWindow):
       allowed,detail=usb_access(port)
       if not allowed:
         raise RuntimeError('Acesso USB indisponível antes da compilação: '+detail)
-      if not FIRMWARE.exists():
-        j.emit('Firmware não encontrado localmente: compilação automática iniciada.')
-        j.cmd(['bash',str(BASE/'prepare-firmware.sh')],1500)
+      j.emit('Verificando versão oficial do firmware antes da gravação...')
+      j.cmd(['bash',str(BASE/'prepare-firmware.sh')],1500)
       if not FIRMWARE.exists():raise RuntimeError('Arquivo de firmware não foi gerado.')
       if not Path(port).exists():raise RuntimeError('A placa foi desconectada.')
       allowed,detail=usb_access(port)
