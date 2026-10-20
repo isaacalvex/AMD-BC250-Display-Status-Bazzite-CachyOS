@@ -134,12 +134,8 @@ class CEFDiagnostic:
     port: int | None
 
 
-def steam_ui_progress(overview: dict) -> int | None:
-    """Progresso geral: bytes baixados + preparação/instalação em disco.
-
-    Processamento é usado como alternativa à preparação quando não há
-    contador de staging; não se somam as duas fases indiscriminadamente.
-    """
+def steam_ui_progress_precise(overview: dict) -> float | None:
+    """Porcentagem estimada ao centésimo: bytes de rede + trabalho em disco."""
     try:
         network_total = max(0, int(overview.get("update_bytes_to_download") or 0))
         network_done = max(0, int(overview.get("update_bytes_downloaded") or 0))
@@ -149,14 +145,22 @@ def steam_ui_progress(overview: dict) -> int | None:
         processed_done = max(0, int(overview.get("update_bytes_processed") or 0))
     except (TypeError, ValueError, OverflowError):
         return None
+    # Contadores de processo podem reiniciar por fase. Não somar os dois
+    # contadores de disco indiscriminadamente.
     disk_total = staged_total or processed_total
     disk_done = staged_done if staged_total else processed_done
     total = network_total + disk_total
     if total <= 0:
         return None
     completed = min(network_done, network_total) + min(disk_done, disk_total)
-    # Enquanto Steam estiver trabalhando, não marcar 100% prematuramente.
-    return max(0, min(99, round(100 * completed / total)))
+    # Sem confirmação de término, não apresentar 100% completo.
+    return max(0.0, min(99.99, round(100.0 * completed / total, 2)))
+
+
+def steam_ui_progress(overview: dict) -> int | None:
+    """API anterior: porcentagem inteira, para firmware legado."""
+    pct = steam_ui_progress_precise(overview)
+    return max(0, min(99, round(pct))) if pct is not None else None
 
 
 def _steam_app_name(appid: str, cache: dict[str,str]) -> str:
@@ -184,6 +188,7 @@ class SteamCEFReader:
         self._message_id=0
         self._name_cache={}
         self._retry_after=0.0
+        self._last_counter=None
         self.diagnostic=CEFDiagnostic("CEF ainda não consultado",None)
 
     def close(self):
@@ -321,16 +326,16 @@ class SteamCEFReader:
             return None
         item=next((x for x in items
                    if str(x.get("appid"))==appid),None)
-        pct=steam_ui_progress(o) if ongoing else None
-        if pct is None and item is not None:
+        pct_precise=steam_ui_progress_precise(o) if ongoing else None
+        if pct_precise is None and item is not None:
             try:
                 total=max(0,int(item.get("total_bytes") or 0))
                 completed=max(0,int(item.get("downloaded_bytes") or 0))
                 if total:
-                    pct=max(0,min(99,round(completed*100/total)))
+                    pct_precise=max(0.0,min(99.99,round(completed*100/total,2)))
             except (TypeError,ValueError,OverflowError):
                 pass
-        if pct is None:
+        if pct_precise is None:
             self.diagnostic=CEFDiagnostic(
                 "CEF conectado, progresso indisponível",self._socket_port)
             return None
@@ -338,17 +343,30 @@ class SteamCEFReader:
         try:
             age=data.get("overviewAgeMs")
             fresh=(age is None or 0 <= float(age) <= 3500)
-            # CEF ao vivo deve ter callbacks recentes; nunca apresentar
-            # uma taxa antiga como velocidade instantânea.
             speed=(max(0,float(rate))/1_000_000
                    if rate is not None and fresh else None)
         except (TypeError,ValueError,OverflowError):
+            fresh=False
             speed=None
+
         try:
             network_total=int(o.get("update_bytes_to_download") or 0)
             network_done=int(o.get("update_bytes_downloaded") or 0)
         except (TypeError,ValueError,OverflowError):
             network_total,network_done=0,0
+
+        # Fallback de MB/s usando DUAS amostras CEF do mesmo AppID,
+        # não checkpoints de appmanifest (que podem atrasar minutos).
+        now=time.monotonic()
+        previous=self._last_counter
+        self._last_counter=(appid,network_done,now)
+        if fresh and previous is not None and previous[0] == appid:
+            delta=network_done-previous[1]
+            elapsed=now-previous[2]
+            if delta>0 and elapsed>=0.2:
+                measured=delta/elapsed/1_000_000
+                if speed is None or speed<=0:
+                    speed=measured
         installing=bool(
             _state_is_install(state) or
             (network_total and network_done >= network_total) or
@@ -368,11 +386,14 @@ class SteamCEFReader:
                       (item or {}).get("total_bytes") or 0)
         except (TypeError,ValueError,OverflowError):
             completed,total=0,0
+        pct=max(0,min(99,round(pct_precise)))
         self.diagnostic=CEFDiagnostic(
-            f"CEF ao vivo: {name} (AppID {appid}) {pct}%",self._socket_port)
+            f"CEF ao vivo: {name} (AppID {appid}) {pct_precise:.2f}%",
+            self._socket_port)
         return Download(
             appid=appid,name=name,percent=pct,
             speed_mb_s=round(speed,1) if speed is not None else None,
             completed=completed,total=total,
             source="Steam CEF (tarefa completa; progresso geral estimado)",
-            phase="install" if installing else "download")
+            phase="install" if installing else "download",
+            percent_precise=pct_precise)
