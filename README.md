@@ -72,6 +72,12 @@ Para diagnosticar pelo terminal: `ls -l /dev/ttyACM0` e `id -nG`. Antes de prepa
 
 ## Downloads de jogos Steam no display STELLAR
 
+**Compatibilidade:** a detecção deve funcionar tanto no **Modo Desktop** quanto no **Modo Gaming** do Bazzite, pois lê os arquivos locais da Steam. Não depende da interface visual em que a Steam está aberta.
+
+**Diagnóstico em caso de download não detectado:** atualize o aplicativo, abra **Diagnóstico → Verificar downloads Steam** enquanto um jogo estiver realmente baixando. O painel agora lista os arquivos `appmanifest` candidatos com `StateFlags`, `BytesDownloaded` e `BytesToDownload`, além de eventos recentes de `content_log.txt`. A detecção usa esses eventos quando os campos do manifesto estão atrasados. Se mesmo assim não houver jogo, envie esses resultados para adaptar o leitor à versão instalada da Steam.
+
+
+
 O monitor Python procura Steam instalada no Linux (Bazzite, CachyOS e Flatpak), inclusive bibliotecas em outros discos definidas no arquivo `libraryfolders.vdf`. Ele consulta os arquivos **Steam appmanifest_*.acf**, que contêm o nome do jogo e os contadores **BytesDownloaded / BytesToDownload**, e o arquivo **content_log.txt**, que pode registrar a velocidade global de download. Sem API oficial pública de atualização contínua, esses dados podem mudar apenas em intervalos — **a porcentagem pode demorar a atualizar**. O serviço não altera nenhum arquivo da Steam.
 
 Quando o monitor encontra uma transferência ativa, envia pela mesma USB do ESP32-C3:
