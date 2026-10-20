@@ -47,6 +47,12 @@ O firmware é destinado à pinagem do projeto original (MOSI 7, SCLK 6, CS 10, D
 
 Capturas reais dependem da execução no hardware e serão adicionadas após validação no CachyOS/Bazzite. O código e o fluxo de instalação foram preparados; os testes de gravação em diferentes placas ainda não foram concluídos.
 
+### Erro ao baixar: DNS / Could not resolve host
+
+Se o log mostrar `Could not resolve host: github.com`, é uma falha de **resolução de nomes da rede**, antes de qualquer instalação. O novo atualizador verifica o DNS antes de iniciar a transferência, registra o erro com mais clareza e não fica esperando indefinidamente. O aplicativo existente não é modificado quando a busca falha.
+
+Na própria máquina Bazzite/CachyOS, confirme a resolução com `getent ahosts github.com` e depois teste o HTTPS com `curl -I --connect-timeout 8 --max-time 15 https://github.com`. Se a primeira consulta falhar, examine rede e DNS local com `resolvectl status` e reconecte sua rede, sem alterar permissões USB nem apagar arquivos. Se o acesso for normalizado, repita **ATUALIZAR → APLICAR ATUALIZAÇÃO**.
+
 ## Atualizar o aplicativo
 
 Abra **Atualizações** no menu lateral. Clique em **ATUALIZAR** para consultar e baixar as alterações do repositório oficial. Depois clique em **APLICAR ATUALIZAÇÃO**. O app instala os novos arquivos, atualiza as bibliotecas Python do ambiente virtual e reinicia automaticamente. O progresso de transferência usa a porcentagem informada pelo Git; outras etapas aparecem em texto e nos logs, sem porcentagens artificiais. O recurso exige instalação pelo script oficial (que cria o clone Git) e rejeita atualizações com alterações locais ou histórico divergente.
