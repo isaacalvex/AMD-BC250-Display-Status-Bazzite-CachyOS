@@ -282,7 +282,9 @@ def steam_watch(seconds=10):
                 print(f'[{i+1:02d}/{seconds}] AppID {result.appid} | '
                       f'{result.name} | {preciso}% | {speed} | '
                       f'etapa={result.phase} | {result.source}', flush=True)
-                snapshots.append((result.appid,result.percent,result.speed_mb_s))
+                snapshots.append((result.appid,result.percent_precise
+                                  if result.percent_precise is not None
+                                  else result.percent,result.speed_mb_s))
             else:
                 print(f'[{i+1:02d}/{seconds}] Sem download ativo | '
                       f'{cef.diagnostic.status}', flush=True)
@@ -290,9 +292,9 @@ def steam_watch(seconds=10):
     finally:
         cef.close()
     if using_files:
-        print('AVISO: CEF indisponível: appmanifest/content_log são snapshots '
-              'e NÃO fornecem progresso nem MB/s garantidos em tempo real.',
-              flush=True)
+        print('AVISO: percentual via appmanifest/content_log é estimado e '
+              'pode ficar atrasado. Se a origem disser "velocidade Steam CEF "
+              "ao vivo", apenas os MB/s são reais.",flush=True)
     if len(snapshots) >= 5 and len(set(snapshots)) == 1:
         print('AVISO: Todas as leituras tiveram valores IDÊNTICOS. '
               'O ESP32 está recebendo os mesmos dados; não há confirmação '
