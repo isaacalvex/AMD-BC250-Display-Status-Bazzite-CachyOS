@@ -33,6 +33,7 @@ class Download:
     completed: int
     total: int
     source: str
+    phase: str = "download"
 
 
 def _read(path: Path, limit: int = 2_000_000) -> str:
@@ -121,17 +122,26 @@ def _steam_rate(roots: list[Path], now: float) -> float | None:
 # Esses formatos foram conferidos com content_log.txt reais da Steam Linux.
 _EVENT = re.compile(r'AppID\s+(\d+)\s+(?:(App|Shader)\s+)?(update changed|state changed)\s*:\s*(.*)', re.I)
 _STARTED = re.compile(r'AppID\s+(\d+)\s+update started\s*:\s*download\s+(\d+)/(\d+)', re.I)
+_STAGE = re.compile(r'\bstage\s+(\d+)/(\d+)', re.I)
+_FINISHED = re.compile(r'AppID\s+(\d+)\s+finished update\b', re.I)
 # Uma transferência grande pode passar horas sem novo evento de estado.
 # É necessário observar o ÚLTIMO estado registrado, não somente os últimos 8 min.
 _LOG_ACTIVITY_WINDOW = 6 * 3600
 
 
-def _content_events(roots: list[Path], now: float) -> dict[str, dict]:
-    """Estado real por AppID: distingue transferências do jogo e shader cache.
+def _new_event() -> dict:
+    return {"time": 0.0, "active": False, "kind": None,
+            "app_active": False, "shader_active": False,
+            "completed": 0, "total": 0,
+            "staged": 0, "stage_total": 0,
+            "phase": None, "finished": False, "started": False}
 
-    A Steam registra 'App update changed' e 'Shader update changed'
-    separadamente. A segunda categoria também baixa bytes pela rede e
-    aparece na tela Downloads da Steam, especialmente no Bazzite.
+
+def _content_events(roots: list[Path], now: float) -> dict[str, dict]:
+    """Estado da TAREFA Steam completa: download + processamento/instalação.
+
+    Cada AppID é genérico. Itens aguardando na fila não são executados.
+    Os sinais explícitos de término prevalecem sobre manifests atrasados.
     """
     found: dict[str, dict] = {}
     for root in roots:
@@ -154,57 +164,69 @@ def _content_events(roots: list[Path], now: float) -> dict[str, dict]:
                 continue
             if when > now + 60 or now - when > _LOG_ACTIVITY_WINDOW:
                 continue
+            finished = _FINISHED.search(line)
+            if finished:
+                event = found.setdefault(finished.group(1), _new_event())
+                if when >= event["time"]:
+                    event.update(time=when, active=False, app_active=False,
+                                 shader_active=False, phase="complete",
+                                 kind=None, finished=True)
+                continue
             started = _STARTED.search(line)
             if started:
                 appid = started.group(1)
-                event = found.setdefault(appid, {
-                    "time": 0.0, "active": False, "kind": None,
-                    "app_active": False, "shader_active": False,
-                    "completed": 0, "total": 0, "started": False
-                })
+                event = found.setdefault(appid, _new_event())
                 if when >= event["time"]:
                     event["completed"] = int(started.group(2))
                     event["total"] = int(started.group(3))
+                    stage = _STAGE.search(line)
+                    if stage:
+                        event["staged"] = int(stage.group(1))
+                        event["stage_total"] = int(stage.group(2))
                     event["started"] = True
+                    event["finished"] = False
                     event["time"] = when
                 continue
             state = _EVENT.search(line)
             if not state:
                 continue
             appid, update_kind, event_type, status = state.groups()
-            event = found.setdefault(appid, {
-                "time": 0.0, "active": False, "kind": None,
-                "app_active": False, "shader_active": False,
-                "completed": 0, "total": 0, "started": False
-            })
+            event = found.setdefault(appid, _new_event())
             if when < event["time"]:
                 continue
-
             lower = status.lower()
             if event_type.lower() == "update changed":
                 kind = "shader" if (update_kind or "").lower() == "shader" else "app"
-                key = f"{kind}_active"
-                # Downloading significa transferência em curso; as fases
-                # Staging/Verifying/Committing sem Downloading NÃO significam.
-                event[key] = (
-                    "downloading" in lower and
-                    "stopping" not in lower and
-                    "paused" not in lower
-                )
-                if event[key]:
+                key = kind + "_active"
+                running = ("running update" in lower or "running," in lower)
+                stopped = any(token in lower for token in (
+                    "stopping", "paused", "suspended")) or lower.strip() == "none"
+                # "Running Update,Staging" e "Running Update,Committing"
+                # são etapas ATIVAS, apesar de já terem baixado 100% pela rede.
+                if stopped:
+                    event[key] = False
+                elif running:
+                    event[key] = True
+                # Nenhum evento de fila começa a execução sozinho.
+                if running and not stopped:
                     event["kind"] = kind
-                elif event["kind"] == kind:
-                    event["kind"] = (
-                        "shader" if event["shader_active"] else
-                        "app" if event["app_active"] else None
-                    )
-            elif any(word in lower for word in (
-                    "update paused", "fully installed", "uninstalled", "suspended")):
-                event["app_active"] = False
-                event["shader_active"] = False
-                event["kind"] = None
-            event["active"] = bool(
-                event["app_active"] or event["shader_active"])
+                    event["phase"] = (
+                        "download" if "downloading" in lower else
+                        "install" if any(k in lower for k in (
+                            "staging", "verifying", "committing",
+                            "preallocating", "reconfiguring", "installing")) else
+                        event["phase"] or "processing")
+                    event["finished"] = False
+                elif event["kind"] == kind and not event[key]:
+                    event["kind"] = ("app" if event["app_active"] else
+                                     "shader" if event["shader_active"] else None)
+            elif ("fully installed" in lower and "update running" not in lower):
+                event.update(app_active=False, shader_active=False,
+                             kind=None, phase="complete", finished=True)
+            elif any(token in lower for token in (
+                    "update paused", "uninstalled", "suspended")):
+                event.update(app_active=False, shader_active=False, kind=None)
+            event["active"] = bool(event["app_active"] or event["shader_active"])
             event["time"] = when
     return found
 
@@ -237,59 +259,72 @@ class SteamDownloadTracker:
                 appid = match.group(1)
                 total = _number(fields.get("BytesToDownload", "0"))
                 completed = _number(fields.get("BytesDownloaded", "0"))
+                stage_total = _number(fields.get("BytesToStage", "0"))
+                staged = _number(fields.get("BytesStaged", "0"))
                 flags = _number(fields.get("StateFlags", "0"))
                 event = events.get(appid)
-                if event and event["total"] and (
-                        not total or completed >= total or
-                        event["completed"] > completed):
-                    # O content_log registra o progresso inicial real mesmo
-                    # antes de Steam salvar os campos do appmanifest.
-                    total = event["total"]
-                    completed = event["completed"]
+                if event and event["finished"]:
+                    continue
+                if event:
+                    if not total:
+                        total = event["total"]
+                    if total == event["total"]:
+                        completed = max(completed, event["completed"])
+                    if not stage_total:
+                        stage_total = event["stage_total"]
+                    if stage_total == event["stage_total"]:
+                        staged = max(staged, event["staged"])
+
                 key = (str(root), appid)
                 previous = self.previous.get(key)
                 updated[key] = (completed, now)
 
-                if not total or completed >= total:
-                    continue
-                # 256=UpdateRunning pode indicar SOMENTE instalação em disco.
-                # Downloading (1048576) ou evento de log são preferíveis.
-                # Para instalações novas, o log pode atualizar antes do ACF.
+                # A tarefa continua ativa durante instalação/processamento,
+                # mas um app apenas "Update Queued/Started" não está rodando.
                 log_active = bool(event and event["active"])
-                flags_downloading = bool(flags & 1048576)
-                flags_running = bool(flags & 256)
-                if not (log_active or flags_downloading or
-                        (flags_running and speed_from_log is not None)):
-                    continue
-                if flags & _PAUSED and not log_active:
+                file_downloading = bool(flags & 1048576)
+                file_processing = bool(flags & 256)
+                if event is not None:
+                    active = log_active
+                else:
+                    active = file_downloading or (
+                        file_processing and (total or stage_total))
+                if not active or (flags & _PAUSED and not log_active):
                     continue
 
-                # Apenas contadores Steam para porcentagem. Não mistura
-                # BytesToStage com BytesToDownload: etapas diferentes.
-                pct = min(99, round(completed * 100 / total))
+                phase = event["phase"] if event and event["phase"] else "download"
+                if completed >= total and total > 0 and phase == "download":
+                    phase = "install" if stage_total and staged < stage_total else "processing"
+
+                # Percentual da tarefa COMPLETA, não só bytes baixados.
+                # Caso os totais não estejam disponíveis, não inventamos 100%.
+                overall_total = total + stage_total
+                if overall_total > 0:
+                    done = min(completed, total) + min(staged, stage_total)
+                    pct = max(0, min(99, round(100 * done / overall_total)))
+                else:
+                    continue
+
                 measured = None
                 delta = 0
-                if previous and completed >= previous[0]:
+                if phase == "download" and previous and completed >= previous[0]:
                     delta = completed - previous[0]
                     seconds = now - previous[1]
                     if delta > 0 and seconds > 0:
                         measured = delta / seconds / 1_000_000
-                # A taxa global do log só é atribuída quando uma única
-                # transferência está concorrendo. Com várias, o delta do
-                # próprio aplicativo é a única aproximação válida.
-                name = (fields.get("name") or f"AppID {appid}").strip()
-                name = " ".join(name.split())[:100]
-                candidate = Download(appid, name, pct, measured,
-                                     completed, total, str(manifest))
-                # Prioriza app cujo progresso mudou, depois o que tem
-                # download flag e a atividade mais recente.
-                # Preferir a transferência observada MAIS RECENTEMENTE no
-                # content_log, não um manifesto antigo ainda "queued".
-                age = max(0, now - event["time"]) if event else 99999
-                freshness = max(0, 60 - min(60, age)) if log_active else 0
-                rank = (100 if delta > 0 else 0) + (
-                    30 if flags_downloading else 0
-                ) + (20 if log_active else 0) + freshness + completed / total
+                # Durante instalação a rede pode corretamente estar em 0 MB/s.
+                if phase != "download":
+                    measured = 0.0
+                name = " ".join((fields.get("name") or
+                                  f"AppID {appid}").split())[:100]
+                candidate = Download(
+                    appid, name, pct, measured, completed, total,
+                    str(manifest) + " (estimativa via ACF/log)", phase)
+                # Prioriza tarefas REALMENTE executando, mesmo com rede 0.
+                age = max(0, now-event["time"]) if event else 999999
+                rank = (1000 if log_active else 0) + (
+                    90 if age < 90 else 0) + (
+                    30 if delta > 0 else 0) + completed / max(total, 1)
                 candidates.append((rank, candidate))
 
         self.previous = updated
@@ -297,9 +332,13 @@ class SteamDownloadTracker:
             return None
         candidates.sort(key=lambda item: item[0], reverse=True)
         chosen = candidates[0][1]
-        # Velocidade reportada nos logs pode ser global. Só a usamos com
-        # uma transferência; ao contrário, recorremos ao delta individual.
-        speed = speed_from_log if len(candidates) == 1 and speed_from_log is not None else chosen.speed_mb_s
-        return Download(chosen.appid, chosen.name, chosen.percent,
-                        round(speed, 1) if speed is not None else None,
-                        chosen.completed, chosen.total, chosen.source)
+        # Taxa global do log só se refere ao jogo com uma única transferência
+        # ativa e na fase de download. Na instalação exibir 0 MB/s.
+        speed = chosen.speed_mb_s
+        if chosen.phase == "download" and len(candidates) == 1:
+            if speed_from_log is not None:
+                speed = speed_from_log
+        return Download(
+            chosen.appid, chosen.name, chosen.percent,
+            round(speed, 1) if speed is not None else None,
+            chosen.completed, chosen.total, chosen.source, chosen.phase)
