@@ -234,3 +234,18 @@ Diagnosticado no Bazzite com Street Fighter 6 (AppID 1364780): a Steam enviou ve
 O cache JS foi versionado para recriar a assinatura dos callbacks que podiam ter ficado antigos ao atualizar o aplicativo com a Steam aberta. O diagnóstico --cef-debug passou a mostrar os três primeiros itens, mesmo quando não estão marcados como active, e os nomes dos campos de overview.
 
 Após atualizar o aplicativo, execute os modos --steam-watch e --cef-debug do stellar_monitor.py para verificar se os MB/s mudam nas amostras e se os itens disponibilizam downloaded_bytes e total_bytes. Esta correção é apenas no programa Bazzite/CachyOS: não requer regravar o ESP32 se o firmware já estiver funcionando.
+
+### Fonte real de porcentagem Steam: campo progress (Steam atual no Bazzite)
+
+Em 20/10/2026, o diagnóstico do Steam CEF em um Bazzite mostrou que o evento `RegisterForDownloadOverview` contém `progress` e `update_network_bytes_per_second`, mas **não** contém os campos antigos `update_bytes_downloaded` e `update_bytes_to_download`. O monitor antigo ignorava `progress` e ficava com a porcentagem esporádica do appmanifest.
+
+O leitor agora coleta de modo restrito o valor `overview.progress` (numérico, ou objeto de campos de progresso), preferindo esse valor nativo da Steam a arquivos ACF e totais calculados. Para valores numéricos simples, trata fração 0..1 como 0..100%; valores numéricos maiores que 1 são tratados como porcentagem. Objetos com `overall_percent_complete` também são aceitos. Outros formatos desconhecidos não são inventados: o `--cef-debug` agora mostra o `progress` bruto sanitizado, `nativePercentParsed` e `itemKeys`, para validar o formato real contra o número exibido na página Downloads da Steam.
+
+A taxa de rede CEF é preservada inclusive quando o estado é Preallocating, se a Steam reportar transferência maior que zero. Para verificar:
+
+```bash
+~/.local/share/stellar-app-monitor/.venv/bin/python ~/.local/share/stellar-app-monitor/stellar_monitor.py --cef-debug
+~/.local/share/stellar-app-monitor/.venv/bin/python ~/.local/share/stellar-app-monitor/stellar_monitor.py --steam-watch
+```
+
+Se `nativePercentParsed` não corresponder à porcentagem mostrada na própria Steam, não considere a integração calibrada: informe o valor bruto de `progress` e a porcentagem da interface para que a escala ou estrutura seja corrigida sem adivinhação. O ESP32 existente recebe o campo PCTF/PCT por USB; essa alteração de fonte é somente no Python, sem nova gravação obrigatória.
