@@ -67,6 +67,32 @@ class SteamDownloadTests(unittest.TestCase):
         item = SteamDownloadTracker().scan()
         self.assertAlmostEqual(item.speed_mb_s, 10.0)
 
+    def test_real_steam_log_app_update_changed(self):
+        # Formato exato usado por versões recentes da Steam no Linux.
+        manifest(self.root, "71", "Jogo Steam Bazzite", 650000, 1000000, 2)
+        logdir = self.root / "logs"
+        logdir.mkdir()
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+        (logdir / "content_log.txt").write_text(
+            f"[{stamp}] AppID 71 update started : download 0/1000000, store 0/0, reuse 0/0, delta 0/0, stage 0/1300000\n"
+            f"[{stamp}] AppID 71 App update changed : Running Update,Downloading,Staging,\n",
+            encoding="utf-8")
+        item = SteamDownloadTracker().scan()
+        self.assertIsNotNone(item)
+        self.assertEqual(item.name, "Jogo Steam Bazzite")
+        self.assertEqual(item.percent, 65)
+
+    def test_real_log_staging_stops_download(self):
+        manifest(self.root, "72", "Jogo processando", 650000, 1000000, 2)
+        logdir = self.root / "logs"
+        logdir.mkdir()
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+        (logdir / "content_log.txt").write_text(
+            f"[{stamp}] AppID 72 App update changed : Running Update,Downloading,Staging,\n"
+            f"[{stamp}] AppID 72 App update changed : Running Update,Staging,\n",
+            encoding="utf-8")
+        self.assertIsNone(SteamDownloadTracker().scan())
+
     def test_recent_log_detects_download_despite_stale_manifest_flags(self):
         manifest(self.root, "70", "Jogo com manifesto atrasado", 65, 100, 2)
         logdir = self.root / "logs"
@@ -99,7 +125,7 @@ class SteamDownloadTests(unittest.TestCase):
         logdir = self.root / "logs"
         logdir.mkdir()
         old = time.strftime("%Y-%m-%d %H:%M:%S",
-                            time.localtime(time.time() - 3600))
+                            time.localtime(time.time() - 7 * 3600))
         (logdir / "content_log.txt").write_text(
             f"[{old}] AppID 90 update changed : Running,Downloading,\n",
             encoding="utf-8")
