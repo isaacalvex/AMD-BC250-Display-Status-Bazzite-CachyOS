@@ -249,3 +249,19 @@ A taxa de rede CEF é preservada inclusive quando o estado é Preallocating, se 
 ```
 
 Se `nativePercentParsed` não corresponder à porcentagem mostrada na própria Steam, não considere a integração calibrada: informe o valor bruto de `progress` e a porcentagem da interface para que a escala ou estrutura seja corrigida sem adivinhação. O ESP32 existente recebe o campo PCTF/PCT por USB; essa alteração de fonte é somente no Python, sem nova gravação obrigatória.
+
+
+## Exibir velocidade como na Steam: Mbps
+
+Na Steam com a opção de mostrar a taxa em **bits por segundo**, valores como **324 Mbps** são equivalentes a **40,5 MB/s**. Os contadores de `SteamClient.Downloads.update_network_bytes_per_second` continuam em bytes/s e o backend continua usando **MB/s** internamente.
+
+O protocolo USB agora inclui o marcador `UNIT:Mbps` **antes** de `PCTF`, sem alterar o valor bruto do campo `SPEED`:
+```text
+DL:1;UNIT:Mbps;PCTF:37.81;PCT:38;SPEED:35.3;NAME:Jogo
+```
+
+O ESP32 com firmware novo exibe **282,4 Mbps** (35,3 × 8). O firmware antigo ignora `UNIT:Mbps` e continua exibindo **35,3 MB/s**, mantendo compatibilidade. O pacote mantém o percentual nativo da Steam e a cadência de atualização anterior. Não confundir **Mbps** com **MB/s**, nem com MB já baixados.
+
+**Necessário para ver Mbps na tela:** atualizar o aplicativo e **gravar novamente o firmware do repositório AMD-BC250-Display-Status**. O instalador do aplicativo não regrava o ESP32 automaticamente. Use **Testar tela de download no ESP32**: o teste passa de **227,2 a 231,2 Mbps** enquanto a porcentagem passa de 65,41% a 65,46%.
+
+Observação: se a Steam estiver configurada para mostrar MB/s, os valores não terão a mesma unidade. Neste modo o Stellar foi configurado para **Mbps** como solicitado.
