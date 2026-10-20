@@ -321,15 +321,21 @@ def main():
                         # Sem CEF (recurso opcional), manter a leitura local
                         # por manifests/logs, que pode atrasar.
                         download = cef.scan()
-                        # Quando o cliente informou explicitamente que está
-                        # parado, não ressuscitar downloads antigos do ACF.
-                        cef_idle = cef.diagnostic.status.startswith(
-                            'CEF conectado, sem tarefa ativa')
-                        if download is None and not cef_idle:
+                        # O CEF pode conectar, porém ainda não receber os
+                        # callbacks do jogo em andamento, ou interpretar
+                        # incorretamente um estado interno da Steam.
+                        # Se não houver leitura CEF VÁLIDA, SEMPRE usar
+                        # o log/manifest de fallback. Nunca confundir
+                        # "CEF conectado" com "Steam realmente ociosa".
+                        if download is None:
                             download = tracker.scan()
                     except Exception as ex:
                         print(f'Steam: falha temporária na leitura: {ex}', flush=True)
-                        download = None
+                        try:
+                            download = tracker.scan()
+                        except Exception as failure:
+                            print(f'Steam: fallback também falhou: {failure}', flush=True)
+                            download = None
 
                     if download is not None:
                         nome = _nome_serial(download.name)
