@@ -114,19 +114,72 @@ def _nome_serial(nome):
 
 
 def steam_status():
+    from steam_downloads import _ACF_FIELD, _content_events, _read
     tracker = SteamDownloadTracker()
     info = tracker.scan()
-    print("Raizes Steam encontradas:", flush=True)
+    print("Diagnóstico Steam — nenhuma configuração será alterada.", flush=True)
+    print("Bibliotecas Steam encontradas:", len(tracker.last_roots), flush=True)
+    if not tracker.last_roots:
+        print("Steam não localizada. Verifique instalação nativa/Flatpak, "
+              "links ~/.steam e bibliotecas montadas.", flush=True)
+        return
     for root in tracker.last_roots:
         print(" -", root, flush=True)
+        apps = root / "steamapps"
+        manifests = sorted(apps.glob("appmanifest_*.acf"))
+        print(f"   appmanifest disponíveis: {len(manifests)}", flush=True)
+        shown = 0
+        for path in manifests:
+            fields = dict(_ACF_FIELD.findall(_read(path)))
+            try:
+                flags = int(fields.get("StateFlags", "0"))
+                total = int(fields.get("BytesToDownload", "0"))
+                done = int(fields.get("BytesDownloaded", "0"))
+            except ValueError:
+                continue
+            if (flags & (256 | 512 | 1024 | 1048576)) or (0 < done < total):
+                print(f"   {path.stem}: {fields.get('name', '?')[:55]} | "
+                      f"StateFlags={flags} | BytesDownloaded={done} | "
+                      f"BytesToDownload={total}", flush=True)
+                shown += 1
+                if shown >= 12:
+                    print("   ...mais candidatos omitidos...", flush=True)
+                    break
+        log = root / "logs/content_log.txt"
+        print(f"   content_log.txt: {'encontrado' if log.exists() else 'ausente'}",
+              flush=True)
+        if log.is_file():
+            try:
+                with log.open("rb") as f:
+                    f.seek(0, os.SEEK_END)
+                    f.seek(max(0, f.tell() - 96 * 1024))
+                    raw = f.read().decode("utf-8", errors="replace")
+                matches = [line.strip() for line in raw.splitlines()
+                           if "AppID " in line and
+                           any(word in line for word in
+                               ("update started", "update changed", "state changed"))]
+                print("   Últimos eventos relacionados aos jogos:", flush=True)
+                for line in matches[-8:]:
+                    print("   ", line[:220], flush=True)
+            except OSError as exc:
+                print("   Erro na leitura do log:", exc, flush=True)
+    recent = _content_events(tracker.last_roots, time.time())
+    if recent:
+        print("Atividade recente no log:", flush=True)
+        for appid, event in list(recent.items())[-10:]:
+            print(f"   AppID {appid}: ativo={event['active']}, "
+                  f"download={event['completed']}/{event['total']}", flush=True)
     if info is None:
-        print("Nenhum download ativo detectado nos manifests Steam.", flush=True)
+        print("Resultado: nenhum jogo com download e porcentagem verificáveis.",
+              flush=True)
+        print("A Steam pode não ter atualizado os contadores no manifesto; "
+              "confira os eventos acima.", flush=True)
     else:
-        speed = f"{info.speed_mb_s:.1f} MB/s" if info.speed_mb_s is not None else "não disponível"
-        print(f"Download: {info.name} (AppID {info.appid}) "
+        speed = f"{info.speed_mb_s:.1f} MB/s" if info.speed_mb_s is not None else "indisponível"
+        print(f"Resultado: {info.name} (AppID {info.appid}) "
               f"{info.percent}% | {speed}", flush=True)
         print("Origem:", info.source, flush=True)
-        print("Nota: counters da Steam podem atualizar em checkpoints.", flush=True)
+
 
 
 def main():
