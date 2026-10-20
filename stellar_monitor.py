@@ -177,6 +177,7 @@ def steam_status():
         print("Atividade recente no log:", flush=True)
         for appid, event in list(recent.items())[-10:]:
             print(f"   AppID {appid}: ativo={event['active']}, "
+                  f"tipo={event.get('kind') or 'nenhum'}, "
                   f"download={event['completed']}/{event['total']}", flush=True)
     if info is None:
         print("Resultado: nenhum jogo com download e porcentagem verificáveis.",
