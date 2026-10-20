@@ -444,17 +444,20 @@ class Window(QMainWindow):
             self.log('Correção USB cancelada pelo usuário.')
             return
         pkexec=shutil.which('pkexec')
-        usermod=next((p for p in ('/usr/sbin/usermod','/sbin/usermod','/usr/bin/usermod') if Path(p).is_file()),None)
-        if not pkexec or not usermod:
-            self.error('Permissão USB',f'Correção automática não disponível. '
-                       f'No terminal execute: sudo usermod -aG {group} {user}\\n'
-                       'Depois encerre a sessão e entre novamente.')
+        bash=shutil.which('bash')
+        helper=BASE/'fix-usb-group.sh'
+        if not pkexec or not bash or not helper.is_file():
+            self.error('Permissão USB',
+                'Correção automática não disponível. No Bazzite, talvez seja necessário '
+                'registrar dialout em /etc/group antes de usar usermod. '
+                'Consulte o README para o procedimento.')
             return
         def task(j):
-            j.emit(f'Solicitando autenticação para incluir {user} no grupo {group}.')
-            j.cmd([pkexec,usermod,'-aG',group,user],120)
-            j.emit(f'Grupo {group} adicionado ao usuário {user}. '
-                   'É necessário ENCERRAR A SESSÃO e entrar novamente antes de atualizar firmware.')
+            j.emit(f'Autorização solicitada: vincular {user} ao grupo {group}.')
+            j.emit('O Bazzite pode manter esse grupo em /usr/lib/group, mas não em /etc/group.')
+            j.emit('O assistente cria backup de /etc/group antes de alterá-lo, quando necessário.')
+            j.cmd([pkexec,bash,str(helper),user,group,port],120)
+            j.emit('Grupo configurado. Saia da sessão gráfica e entre novamente antes de gravar.')
         def done(ok,msg):
             if ok:
                 QMessageBox.information(self,'Permissões atualizadas',
