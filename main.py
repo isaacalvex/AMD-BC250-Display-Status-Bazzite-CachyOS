@@ -529,17 +529,17 @@ class Window(QMainWindow):
             j.cmd(['systemctl','--user','stop',UNIT],20)
         try:
             j.emit('Abrindo porta '+port+' para um teste visual (sem gravar firmware).')
-            with serial.Serial(port,BAUDRATE if 'BAUDRATE' in globals() else 115200,
+            with serial.Serial(port,115200,
                                timeout=1,write_timeout=2) as ser:
                 time.sleep(2)
                 ser.reset_output_buffer()
-                sample=b'DL:1;PCT:65;SPEED:28.4;NAME:TESTE STELLAR\\n'
+                sample=b'DL:1;PCT:65;SPEED:28.4;NAME:TESTE STELLAR\n'
                 for i in range(6):
                     ser.write(sample)
                     ser.flush()
                     j.emit('Pacote DL:1 enviado, exemplo 65% — '+str(i+1)+'/6')
                     time.sleep(1)
-                ser.write(b'DL:0\\n')
+                ser.write(b'DL:0\n')
                 ser.flush()
                 j.emit('Pacote DL:0 enviado; voltando para as temperaturas.')
         finally:
