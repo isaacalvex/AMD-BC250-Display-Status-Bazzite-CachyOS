@@ -333,6 +333,10 @@ def main():
                     if download is not None:
                         nome = _nome_serial(download.name)
                         ser.write(pacote_download(download))
+                        if not download_anterior:
+                            print(f'USB: DL:1 enviado ao ESP32 — AppID {download.appid}, '
+                                  f'{nome}, {download.percent}%, fase={download.phase}',
+                                  flush=True)
                         if (last_steam_identity != (download.appid, download.percent) or
                             last_steam_source != download.source or
                             time.monotonic() - last_steam_report >= 8):
@@ -343,8 +347,8 @@ def main():
                             if download.source.startswith('Steam CEF'):
                                 print('Fonte: Steam CEF ao vivo (percentual total estimado).',flush=True)
                             else:
-                                print('AVISO: Steam CEF indisponível; progresso baseado em arquivos '
-                                      'pode não atualizar em tempo real.',flush=True)
+                                print(f'Fonte fallback: {cef.diagnostic.status}; '
+                                      'progresso de arquivos pode estar atrasado.',flush=True)
                             last_steam_report = time.monotonic()
                             last_steam_source = download.source
                             last_steam_identity = (download.appid, download.percent)
