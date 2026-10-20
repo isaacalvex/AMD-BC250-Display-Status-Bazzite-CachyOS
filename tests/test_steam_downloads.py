@@ -82,7 +82,7 @@ class SteamDownloadTests(unittest.TestCase):
         self.assertEqual(item.name, "Jogo Steam Bazzite")
         self.assertEqual(item.percent, 65)
 
-    def test_real_log_staging_stops_download(self):
+    def test_real_log_staging_keeps_job_active(self):
         manifest(self.root, "72", "Jogo processando", 650000, 1000000, 2)
         logdir = self.root / "logs"
         logdir.mkdir()
@@ -91,7 +91,10 @@ class SteamDownloadTests(unittest.TestCase):
             f"[{stamp}] AppID 72 App update changed : Running Update,Downloading,Staging,\n"
             f"[{stamp}] AppID 72 App update changed : Running Update,Staging,\n",
             encoding="utf-8")
-        self.assertIsNone(SteamDownloadTracker().scan())
+        result=SteamDownloadTracker().scan()
+        self.assertIsNotNone(result)
+        self.assertEqual(result.phase,"install")
+        self.assertEqual(result.speed_mb_s,0.0)
 
     def test_recent_log_detects_download_despite_stale_manifest_flags(self):
         manifest(self.root, "70", "Jogo com manifesto atrasado", 65, 100, 2)
@@ -143,7 +146,7 @@ class SteamDownloadTests(unittest.TestCase):
         self.assertIsNotNone(item)
         self.assertEqual(item.name, "Download grande")
 
-    def test_staging_is_not_active_download(self):
+    def test_staging_keeps_app_active_without_network(self):
         manifest(self.root, "92", "Terminou transferencia", 25, 100, 2)
         (self.root / "logs").mkdir()
         stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
@@ -151,7 +154,9 @@ class SteamDownloadTests(unittest.TestCase):
             f"[{stamp}] AppID 92 update changed : Running Update,Downloading,\n"
             f"[{stamp}] AppID 92 update changed : Running Update,Staging,\n",
             encoding="utf-8")
-        self.assertIsNone(SteamDownloadTracker().scan())
+        result=SteamDownloadTracker().scan()
+        self.assertIsNotNone(result)
+        self.assertEqual(result.phase,"install")
 
     def test_bazzite_shader_real_log_active(self):
         # Evidência real do Bazzite: AppID 1794680 / Vampire Survivors.
@@ -226,7 +231,7 @@ class SteamDownloadTests(unittest.TestCase):
             encoding="utf-8")
         self.assertIsNotNone(SteamDownloadTracker().scan())
 
-    def test_shader_staging_no_longer_network_download(self):
+    def test_shader_staging_keeps_task_visible(self):
         manifest(self.root, "1794680", "Vampire Survivors",
                  2934016, 502455904, 1042)
         logdir = self.root / "logs"
@@ -238,7 +243,72 @@ class SteamDownloadTests(unittest.TestCase):
             f"[{stamp}] AppID 1794680 Shader update changed : "
             "Running Update,Staging,\n",
             encoding="utf-8")
+        result=SteamDownloadTracker().scan()
+        self.assertIsNotNone(result)
+        self.assertEqual(result.phase,"install")
+        self.assertEqual(result.speed_mb_s,0.0)
+
+    def test_proton_installs_after_network_finishes_then_stops(self):
+        """Proton 11.0 da captura: 403 MB baixados, instalação 90%."""
+        steamapps = self.root / "steamapps"
+        data = (
+            '"AppState"\n{\n'
+            '"appid" "4628710"\n"name" "Proton 11.0"\n'
+            '"StateFlags" "1026"\n'
+            '"BytesToDownload" "403000000"\n'
+            '"BytesDownloaded" "403000000"\n'
+            '"BytesToStage" "800000000"\n'
+            '"BytesStaged" "720000000"\n}\n'
+        )
+        (steamapps / "appmanifest_4628710.acf").write_text(
+            data, encoding="utf-8")
+        (self.root / "logs").mkdir()
+        path = self.root / "logs/content_log.txt"
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+        path.write_text(
+            f"[{stamp}] AppID 4628710 App update changed : Running Update,Staging,\n",
+            encoding="utf-8")
+        result = SteamDownloadTracker().scan()
+        self.assertIsNotNone(result)
+        self.assertEqual(result.name,"Proton 11.0")
+        self.assertEqual(result.phase,"install")
+        self.assertEqual(result.speed_mb_s,0.0)
+        self.assertEqual(result.percent,93)  # total do trabalho: rede + disco
+
+        # A tarefa continua em Verifying/Committing depois da rede.
+        path.write_text(
+            f"[{stamp}] AppID 4628710 App update changed : Running Update,Verifying Staged,\n"
+            f"[{stamp}] AppID 4628710 App update changed : Running Update,Committing,\n",
+            encoding="utf-8")
+        result = SteamDownloadTracker().scan()
+        self.assertIsNotNone(result)
+        self.assertEqual(result.phase,"install")
+
+        # Apenas conclusão real remove a tela.
+        with path.open("a",encoding="utf-8") as out:
+            out.write(
+                f"[{stamp}] AppID 4628710 finished update, 1 mounted depots\n"
+                f"[{stamp}] AppID 4628710 App update changed : None\n")
         self.assertIsNone(SteamDownloadTracker().scan())
+
+    def test_queued_game_not_selected_while_other_app_installs(self):
+        manifest(self.root, "1209490", "Exit the Gungeon",
+                 512812752, 1011679456, 1026)
+        manifest(self.root, "4628710", "Proton 11.0",
+                 403000000,403000000,1026)
+        path = self.root / "steamapps/appmanifest_4628710.acf"
+        path.write_text(path.read_text().replace(
+            '"BytesDownloaded" "403000000"',
+            '"BytesDownloaded" "403000000"\n"BytesToStage" "100"\n"BytesStaged" "90"'),
+            encoding="utf-8")
+        (self.root / "logs").mkdir()
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+        (self.root / "logs/content_log.txt").write_text(
+            f"[{stamp}] AppID 4628710 App update changed : Running Update,Staging,\n",
+            encoding="utf-8")
+        result=SteamDownloadTracker().scan()
+        self.assertIsNotNone(result)
+        self.assertEqual(result.appid,"4628710")
 
     def test_secondary_library(self):
         extra = Path(self.tmp.name) / "games"
