@@ -224,7 +224,7 @@ class SteamCEFReader:
                 "CEF conectado, nenhum download ativo",self._socket_port)
             return None
         item=next((x for x in items
-                   if str(x.get("appid"))==appid),active_item)
+                   if str(x.get("appid"))==appid),None)
         pct=steam_ui_progress(o) if state in ("updating","starting") else None
         if pct is None and item is not None:
             try:
