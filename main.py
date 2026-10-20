@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Stellar App Monitor — PySide6 desktop client for AMD BC250 / ESP32-C3."""
-import os, sys, re, glob, time, subprocess, threading, urllib.request, collections, grp, pwd, shutil, stat
+import os, sys, re, glob, time, subprocess, threading, urllib.request, collections, grp, pwd, shutil, stat, selectors
 from pathlib import Path
 from datetime import datetime
 from PySide6.QtCore import Qt, QObject, Signal, QTimer, QThread, QRectF, QPointF
@@ -297,31 +297,96 @@ class Window(QMainWindow):
         self.error('Atualização','Há modificações em arquivos versionados ou o Git falhou. Arquivos gerados pelo aplicativo não bloqueiam atualizações. Consulte os logs.')
         return
     self.fetch_button.setEnabled(False);self.apply_button.setEnabled(False)
-    self.update_progress.setValue(0);self.update_label.setText('Baixando atualização...')
+    self.update_progress.setValue(0);self.update_label.setText('Verificando rede e buscando atualização...')
     def task(j):
-        argv=['git','-C',str(BASE),'fetch','--progress','origin','main']
-        j.emit('Baixando atualizações de origem confiável: GitHub oficial.')
-        p=subprocess.Popen(argv,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,bufsize=0)
-        buf=''
-        while True:
-            byte=p.stdout.read(1)
-            if not byte:break
-            char=byte.decode('utf-8','replace')
-            if char in '\r\n':
-                if buf.strip():
-                    j.emit(buf.strip()[-220:])
-                    matches=re.findall(r'(?:Receiving objects|Resolving deltas):\s*(\d+)%',buf)
-                    if matches:j.progress.emit(min(95,int(matches[-1])))
-                buf=''
-            else:buf=(buf+char)[-700:]
-        if p.wait()!=0:raise RuntimeError('Falha ao baixar atualização do GitHub.')
+        j.emit('Verificando conectividade com github.com...')
+        # getent usa a configuração DNS real da sessão Linux. Executá-lo
+        # separado evita aguardar até o timeout longo do git/libcurl.
+        # Com proxy configurado, a resolução pode ser feita no proxy.
+        if not any(os.environ.get(x) for x in
+                   ('https_proxy','HTTPS_PROXY','all_proxy','ALL_PROXY')):
+            try:
+                dns=subprocess.run(['getent','ahosts','github.com'],
+                                   capture_output=True,text=True,timeout=9)
+            except subprocess.TimeoutExpired:
+                raise RuntimeError(
+                    'Tempo esgotado na consulta DNS de github.com. '
+                    'Verifique a rede/DNS do Bazzite e tente novamente.')
+            except FileNotFoundError:
+                dns=None
+            if dns is not None and (dns.returncode!=0 or not dns.stdout.strip()):
+                raise RuntimeError(
+                    'O sistema não conseguiu resolver github.com (falha DNS). '
+                    'Verifique a conexão e teste: getent ahosts github.com')
+        j.emit('DNS verificado. Conectando ao repositório oficial...')
+        argv=['git','-c','http.lowSpeedLimit=1024','-c','http.lowSpeedTime=20',
+              '-C',str(BASE),'fetch','--progress','origin','main']
+        j.emit('$ '+' '.join(argv))
+        env=os.environ.copy()
+        env['GIT_TERMINAL_PROMPT']='0'
+        process=subprocess.Popen(argv,stdout=subprocess.PIPE,
+                                 stderr=subprocess.STDOUT,bufsize=0,env=env)
+        selector=selectors.DefaultSelector()
+        selector.register(process.stdout,selectors.EVENT_READ)
+        pending=''
+        recent=[]
+        last_activity=time.monotonic()
+        try:
+            while True:
+                ready=selector.select(timeout=1.0)
+                if ready:
+                    piece=os.read(process.stdout.fileno(),4096)
+                    if not piece:break
+                    last_activity=time.monotonic()
+                    pending+=piece.decode('utf-8',errors='replace')
+                    parts=re.split(r'[\r\n]',pending)
+                    pending=parts.pop()[-1200:]
+                    for line in parts:
+                        line=line.strip()
+                        if not line:continue
+                        recent.append(line)
+                        if len(recent)>12:recent.pop(0)
+                        j.emit(line[-240:])
+                        matches=re.findall(
+                            r'(?:Receiving objects|Resolving deltas):\s*(\d{1,3})%',
+                            line,re.I)
+                        if matches:j.progress.emit(min(99,int(matches[-1])))
+                if time.monotonic()-last_activity>50:
+                    raise RuntimeError(
+                        'GitHub não respondeu por 50 segundos durante o download. '
+                        'Confira a rede/DNS e tente novamente.')
+            if pending.strip():
+                recent.append(pending.strip())
+                j.emit(pending.strip()[-240:])
+            rc=process.wait(timeout=10)
+            if rc!=0:
+                diagnostic=' | '.join(recent[-4:])
+                if 'could not resolve host' in diagnostic.lower():
+                    raise RuntimeError(
+                        'Falha de DNS: github.com não pôde ser resolvido. '
+                        'Verifique a rede do Bazzite. Detalhe: '+diagnostic[-350:])
+                raise RuntimeError(
+                    f'Falha no download do GitHub (Git código {rc}): '
+                    +diagnostic[-450:])
+        finally:
+            selector.close()
+            if process.poll() is None:
+                process.kill()
+                process.wait()
+            if process.stdout:
+                process.stdout.close()
         j.progress.emit(100)
         rc,head=command(['git','-C',str(BASE),'rev-parse','HEAD'],10)
+        if rc:raise RuntimeError('Não foi possível consultar a versão local: '+head)
         rc,remote=command(['git','-C',str(BASE),'rev-parse','FETCH_HEAD'],10)
-        if head==remote:j.emit('O Stellar App Monitor já está na versão mais recente.')
+        if rc:raise RuntimeError('Download finalizado, mas FETCH_HEAD está indisponível: '+remote)
+        if head==remote:
+            j.emit('O Stellar App Monitor já está na versão mais recente.')
         else:
-            rc,out=command(['git','-C',str(BASE),'merge-base','--is-ancestor',head,remote],10)
-            if rc:raise RuntimeError('Histórico Git divergente; atualização automática não segura.')
+            rc,out=command(
+                ['git','-C',str(BASE),'merge-base','--is-ancestor',head,remote],10)
+            if rc:raise RuntimeError(
+                'Histórico Git divergente; atualização automática não é segura.')
             j.emit('Atualização disponível: '+remote[:10])
     def finished(ok,msg):
         self.fetch_button.setEnabled(True)
