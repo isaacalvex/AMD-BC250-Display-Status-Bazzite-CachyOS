@@ -1,0 +1,25 @@
+name: Verificar monitor Steam
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'steam_downloads.py'
+      - 'stellar_monitor.py'
+      - 'tests/**'
+      - '.github/workflows/verify-steam.yml'
+  workflow_dispatch:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verificar sintaxe
+        run: python -m py_compile steam_downloads.py stellar_monitor.py tests/test_steam_downloads.py
+      - name: Testes locais de manifest Steam
+        run: python -m unittest discover -s tests -v
