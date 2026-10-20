@@ -67,6 +67,44 @@ class SteamDownloadTests(unittest.TestCase):
         item = SteamDownloadTracker().scan()
         self.assertAlmostEqual(item.speed_mb_s, 10.0)
 
+    def test_recent_log_detects_download_despite_stale_manifest_flags(self):
+        manifest(self.root, "70", "Jogo com manifesto atrasado", 65, 100, 2)
+        logdir = self.root / "logs"
+        logdir.mkdir()
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+        (logdir / "content_log.txt").write_text(
+            f"[{stamp}] AppID 70 update changed : Running,Downloading,Staging,\n",
+            encoding="utf-8")
+        item = SteamDownloadTracker().scan()
+        self.assertIsNotNone(item)
+        self.assertEqual((item.name, item.percent),
+                         ("Jogo com manifesto atrasado", 65))
+
+    def test_log_supplies_total_when_manifest_has_zero(self):
+        manifest(self.root, "80", "Jogo iniciando", 0, 0, 2)
+        logdir = self.root / "logs"
+        logdir.mkdir()
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+        (logdir / "content_log.txt").write_text(
+            f"[{stamp}] AppID 80 update started : download 150/1000, "
+            "store 0/0, reuse 0/0\n"
+            f"[{stamp}] AppID 80 update changed : Running,Downloading,\n",
+            encoding="utf-8")
+        item = SteamDownloadTracker().scan()
+        self.assertIsNotNone(item)
+        self.assertEqual(item.percent, 15)
+
+    def test_stale_log_does_not_trigger(self):
+        manifest(self.root, "90", "Jogo encerrado", 65, 100, 2)
+        logdir = self.root / "logs"
+        logdir.mkdir()
+        old = time.strftime("%Y-%m-%d %H:%M:%S",
+                            time.localtime(time.time() - 3600))
+        (logdir / "content_log.txt").write_text(
+            f"[{old}] AppID 90 update changed : Running,Downloading,\n",
+            encoding="utf-8")
+        self.assertIsNone(SteamDownloadTracker().scan())
+
     def test_secondary_library(self):
         extra = Path(self.tmp.name) / "games"
         manifest(extra, "60", "Jogo externo", 25, 100, 1048576)
