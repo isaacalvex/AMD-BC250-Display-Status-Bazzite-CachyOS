@@ -285,6 +285,45 @@ class SteamCEFTests(unittest.TestCase):
         self.assertGreater(result.speed_mb_s,20)
         self.assertLess(result.speed_mb_s,30)
 
+    def test_real_bazzite_sparse_cef_keeps_live_speed(self):
+        """Quatro snapshots reais: Steam envia AppID/rate, mas omite totais."""
+        reader=SteamCEFReader()
+        overview={
+            "update_appid":1364780,
+            "update_state":"Downloading",
+            "paused":False,
+            "update_network_bytes_per_second":36_828_172,
+            "update_disc_bytes_per_second":35_572_703,
+            "update_is_install":True,
+        }
+        reader._query=lambda:{
+            "overview":overview,
+            "gotOverview":True,
+            "gotItems":False,
+            "items":[{"appid":1364780,"active":False}],
+            "overviewAgeMs":391,
+        }
+        # Sem denominador confiável: CEF isoladamente não pode inventar %.
+        self.assertIsNone(reader.scan())
+        self.assertIsNotNone(reader.live_metrics)
+        self.assertEqual(reader.live_metrics[0],"1364780")
+        self.assertAlmostEqual(reader.live_metrics[1],36.83)
+        self.assertIn("sem contadores",reader.diagnostic.status)
+        overview["update_network_bytes_per_second"]=35_804_765
+        self.assertIsNone(reader.scan())
+        self.assertAlmostEqual(reader.live_metrics[1],35.8)
+
+    def test_cef_expired_callback_does_not_supply_speed(self):
+        reader=SteamCEFReader()
+        reader._query=lambda:{
+            "overview":{
+                "update_appid":1364780,"update_state":"Downloading",
+                "update_network_bytes_per_second":36_800_000
+            },"gotOverview":True,"items":[],"overviewAgeMs":10000
+        }
+        self.assertIsNone(reader.scan())
+        self.assertIsNone(reader.live_metrics)
+
     def test_idle_or_paused_is_not_reported_as_download(self):
         reader=SteamCEFReader()
         sample={"overview":{"update_appid":123,"update_state":"Updating",
