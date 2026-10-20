@@ -634,7 +634,7 @@ class Window(QMainWindow):
         if rc:raise RuntimeError('Monitoramento Steam falhou: '+out[-600:])
     def finished(ok,msg):
         self.diag.setPlainText(result['text'] if ok else
-                               result['text']+'\\nERRO: '+msg)
+                               result['text']+'\nERRO: '+msg)
     self.run_job('Monitorar Steam por 10 segundos',task,finished)
 
  def steam_diagnose(self):
