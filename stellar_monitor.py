@@ -202,6 +202,50 @@ def steam_status():
 
 
 
+def cef_debug():
+    """Inspeção SOMENTE LEITURA dos callbacks Downloads no SharedJSContext.
+
+    Somente campos de downloads; não extrai cookies, conta, sessão ou URL.
+    """
+    import json
+    cef=SteamCEFReader()
+    print("=== Diagnóstico Steam CEF — apenas telemetria de download ===", flush=True)
+    try:
+        for sample in range(4):
+            result=cef._query()
+            print(f"[{sample + 1}/4] Porta: {cef.diagnostic.port}; "
+                  f"Estado: {cef.diagnostic.status}", flush=True)
+            if result is None:
+                print("CEF: nenhuma resposta válida",flush=True)
+            elif result.get("error"):
+                print("API SteamClient:",str(result["error"])[:160],flush=True)
+            else:
+                summary={
+                    "api":result.get("api",{}),
+                    "gotOverview":result.get("gotOverview"),
+                    "gotItems":result.get("gotItems"),
+                    "overviewAgeMs":result.get("overviewAgeMs"),
+                    "downloading":result.get("downloading"),
+                    "overview":result.get("overview",{}),
+                    "activeItems":[{
+                        "appid":x.get("appid"),
+                        "active":x.get("active"),
+                        "completed":x.get("completed"),
+                        "paused":x.get("paused"),
+                        "downloaded_bytes":x.get("downloaded_bytes"),
+                        "total_bytes":x.get("total_bytes"),
+                    } for x in result.get("items",[])
+                       if isinstance(x,dict) and x.get("active")][:3],
+                    "itemsCount":len(result.get("items",[])),
+                    "error":result.get("error")
+                }
+                print(json.dumps(summary,ensure_ascii=False,default=str),flush=True)
+            if sample < 3:
+                time.sleep(1)
+    finally:
+        cef.close()
+
+
 def steam_watch(seconds=10):
     """Uma amostra por segundo, distinguindo fonte viva de arquivos defasados."""
     tracker = SteamDownloadTracker()
@@ -280,7 +324,7 @@ def main():
                         # Quando o cliente informou explicitamente que está
                         # parado, não ressuscitar downloads antigos do ACF.
                         cef_idle = cef.diagnostic.status.startswith(
-                            'CEF conectado, nenhum download ativo')
+                            'CEF conectado, sem tarefa ativa')
                         if download is None and not cef_idle:
                             download = tracker.scan()
                     except Exception as ex:
@@ -324,7 +368,9 @@ def main():
 
 
 if __name__ == '__main__':
-    if '--steam-status' in sys.argv:
+    if '--cef-debug' in sys.argv:
+        cef_debug()
+    elif '--steam-status' in sys.argv:
         steam_status()
     elif '--steam-watch' in sys.argv:
         steam_watch()
