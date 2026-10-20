@@ -25,38 +25,75 @@ _JS = r"""(async () => {
   const d = window.SteamClient && window.SteamClient.Downloads;
   if (!d) return {error: "SteamClient.Downloads indisponivel"};
   if (!window.__stellarDownloadReader) {
-    const cache = window.__stellarDownloadReader = {overview:null, items:[], overviewTime:0};
-    if (typeof d.RegisterForDownloadOverview === 'function')
-      d.RegisterForDownloadOverview(v => {cache.overview = v; cache.overviewTime = Date.now();});
-    if (typeof d.RegisterForDownloadItems === 'function')
-      d.RegisterForDownloadItems((active,items) => {
-        cache.items = Array.isArray(items) ? items : [];
-      });
+    const cache = window.__stellarDownloadReader = {
+      overview:null, items:[], overviewTime:0, itemsTime:0,
+      error:null, ready:false
+    };
+    try {
+      if (typeof d.RegisterForDownloadOverview === 'function')
+        cache.overviewListener = d.RegisterForDownloadOverview(v => {
+          cache.overview = v; cache.overviewTime = Date.now();
+        });
+      if (typeof d.RegisterForDownloadItems === 'function')
+        cache.itemsListener = d.RegisterForDownloadItems((active,items) => {
+          cache.items = Array.isArray(items) ? items : [];
+          cache.itemsTime = Date.now();
+          cache.downloading = !!active;
+        });
+      cache.ready = true;
+    } catch(e) {
+      cache.error = String(e).slice(0,160);
+    }
   }
   const cache = window.__stellarDownloadReader;
-  let o = cache.overview;
-  if (typeof d.GetDownloadOverview === 'function') {
-    try { const latest = await d.GetDownloadOverview(); if (latest) { o = latest; cache.overviewTime = Date.now(); } } catch (e) {}
+  // SteamClient informa os dados assincronamente via callbacks. A
+  // primeira consulta não deve confundir "ainda não recebido" com "ocioso".
+  if (!cache.overview && !cache.itemsTime) {
+    await new Promise(resolve => setTimeout(resolve, 550));
   }
-  // A lista de itens também contém bytes por AppID. Algumas versões
-  // do Steam notificam primeiro a lista e depois a visão geral.
-  if (!o && !cache.items.length) return {pending:true};
+  let o = cache.overview;
+  // API opcional, algumas versões do Steam não possuem este método.
+  if (typeof d.GetDownloadOverview === 'function') {
+    try {
+      const latest = await d.GetDownloadOverview();
+      if (latest) {
+        o = latest;
+        cache.overview = latest;
+        cache.overviewTime = Date.now();
+      }
+    } catch (e) {}
+  }
   const keys = [
-    'update_appid','update_state','paused','update_bytes_downloaded',
-    'update_bytes_to_download','update_bytes_staged','update_bytes_to_stage',
+    'update_appid','update_state','paused',
+    'update_bytes_downloaded','update_bytes_to_download',
+    'update_bytes_staged','update_bytes_to_stage',
     'update_bytes_processed','update_bytes_to_process',
-    'update_network_bytes_per_second','update_disc_bytes_per_second'
+    'update_network_bytes_per_second','update_disc_bytes_per_second',
+    'update_is_shader','update_is_install'
   ];
   const overview = {};
-  if (o) for (const k of keys) overview[k] = o[k];
+  if (o) for (const k of keys) {
+    if (o[k] !== undefined) overview[k] = o[k];
+  }
   const items = (cache.items || []).slice(0,30).map(x => ({
     appid:x.appid, active:x.active, paused:x.paused,
     completed:x.completed, name:x.name,
     downloaded_bytes:x.downloaded_bytes, total_bytes:x.total_bytes
   }));
-  return {overview, items, overviewAgeMs: cache.overviewTime ? Date.now()-cache.overviewTime : null};
+  return {
+    overview, items,
+    gotOverview: !!o, gotItems: cache.itemsTime > 0,
+    downloading: cache.downloading === true,
+    overviewAgeMs: cache.overviewTime ? Date.now()-cache.overviewTime : null,
+    itemsAgeMs: cache.itemsTime ? Date.now()-cache.itemsTime : null,
+    error: cache.error,
+    api: {
+      overviewSubscription: typeof d.RegisterForDownloadOverview === 'function',
+      itemsSubscription: typeof d.RegisterForDownloadItems === 'function',
+      directOverview: typeof d.GetDownloadOverview === 'function'
+    }
+  };
 })()"""
-
 
 @dataclass(frozen=True)
 class CEFDiagnostic:
@@ -211,6 +248,19 @@ class SteamCEFReader:
         o=overview if isinstance(overview,dict) else {}
         items=[item for item in data.get("items",[])
                if isinstance(item,dict)]
+        # Antes do primeiro callback, os objetos são vazios. Isso NÃO
+        # significa que nenhum jogo está sendo instalado/baixado.
+        if not data.get("gotOverview", bool(o)) and not data.get(
+                "gotItems", bool(items)):
+            self.diagnostic=CEFDiagnostic(
+                "CEF conectado, aguardando primeira telemetria SteamClient",
+                self._socket_port)
+            return None
+        if data.get("error"):
+            self.diagnostic=CEFDiagnostic(
+                "CEF: erro na assinatura de eventos SteamClient",
+                self._socket_port)
+            return None
         active_item=next((
             item for item in items
             if item.get("active") and not item.get("paused")
@@ -231,7 +281,9 @@ class SteamCEFReader:
         if (appid=="0" or paused or
                 (state not in ongoing and not active_item)):
             self.diagnostic=CEFDiagnostic(
-                "CEF conectado, nenhum download ativo",self._socket_port)
+                f"CEF conectado, sem tarefa ativa (state={state}, "
+                f"appid={appid}, items_ativos={int(active_item is not None)})",
+                self._socket_port)
             return None
         item=next((x for x in items
                    if str(x.get("appid"))==appid),None)
