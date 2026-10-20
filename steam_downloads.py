@@ -21,7 +21,7 @@ _APP_MANIFEST = re.compile(r'^appmanifest_(\d+)\.acf$')
 # 1024=UpdateStarted, 1048576=Downloading.
 _RUNNING = 256 | 1024 | 1048576
 _PAUSED = 512
-_MAX_RATE_AGE = 25.0
+_MAX_RATE_AGE = 100.0
 
 
 @dataclass(frozen=True)
@@ -118,6 +118,63 @@ def _steam_rate(roots: list[Path], now: float) -> float | None:
     return latest_value
 
 
+_EVENT = re.compile(r'AppID\s+(\d+)\s+(update changed|state changed)\s*:\s*(.*)', re.I)
+_STARTED = re.compile(r'AppID\s+(\d+)\s+update started\s*:\s*download\s+(\d+)/(\d+)', re.I)
+_LOG_ACTIVITY_WINDOW = 8 * 60
+
+
+def _content_events(roots: list[Path], now: float) -> dict[str, dict]:
+    """Lê atividades recentes do content_log, mesmo com ACF desatualizado."""
+    found: dict[str, dict] = {}
+    for root in roots:
+        path = root / "logs/content_log.txt"
+        try:
+            with path.open("rb") as stream:
+                stream.seek(0, os.SEEK_END)
+                stream.seek(max(0, stream.tell() - 256 * 1024))
+                lines = stream.read().decode("utf-8", "replace").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            stamp = _LOG_STAMP.match(line)
+            if not stamp:
+                continue
+            try:
+                when = datetime.strptime(stamp.group(1), "%Y-%m-%d %H:%M:%S").timestamp()
+            except ValueError:
+                continue
+            if when > now + 60 or now - when > _LOG_ACTIVITY_WINDOW:
+                continue
+            started = _STARTED.search(line)
+            if started:
+                appid = started.group(1)
+                event = found.setdefault(appid, {"time": 0, "active": False,
+                                                   "completed": 0, "total": 0})
+                event["completed"] = int(started.group(2))
+                event["total"] = int(started.group(3))
+                event["time"] = max(when, event["time"])
+                continue
+            state = _EVENT.search(line)
+            if not state:
+                continue
+            appid, event_type, status = state.groups()
+            event = found.setdefault(appid, {"time": 0, "active": False,
+                                               "completed": 0, "total": 0})
+            if when < event["time"]:
+                continue
+            if event_type.lower() == "update changed":
+                if "Downloading" in status and "Stopping" not in status:
+                    event["active"] = True
+                elif any(x in status for x in ("Stopping", "None", "Paused")):
+                    event["active"] = False
+            elif "Update Paused" in status or "Uninstalled" in status:
+                event["active"] = False
+            elif "Downloading" in status:
+                event["active"] = True
+            event["time"] = when
+    return found
+
+
 class SteamDownloadTracker:
     def __init__(self, home: Path | None = None):
         self.home = home
@@ -129,6 +186,7 @@ class SteamDownloadTracker:
         self.last_roots = roots
         now = time.time()
         speed_from_log = _steam_rate(roots, now)
+        events = _content_events(roots, now)
         candidates: list[tuple[float, Download]] = []
         updated: dict[tuple[str, str], tuple[int, float]] = {}
         for root in roots:
@@ -146,13 +204,21 @@ class SteamDownloadTracker:
                 total = _number(fields.get("BytesToDownload", "0"))
                 completed = _number(fields.get("BytesDownloaded", "0"))
                 flags = _number(fields.get("StateFlags", "0"))
+                event = events.get(appid)
+                if (not total or completed > total) and event and event["total"]:
+                    total = event["total"]
+                    completed = event["completed"]
                 key = (str(root), appid)
                 previous = self.previous.get(key)
                 updated[key] = (completed, now)
 
                 if not total or completed >= total:
                     continue
-                if not flags & _RUNNING or flags & _PAUSED:
+                if flags & _PAUSED:
+                    continue
+                # O estado da transferência pode estar atualizado no log,
+                # mesmo quando o appmanifest ainda não foi salvo pela Steam.
+                if not (flags & (256 | 1048576) or (event and event["active"])):
                     continue
 
                 # Apenas contadores Steam para porcentagem. Não mistura
@@ -176,7 +242,7 @@ class SteamDownloadTracker:
                 # download flag e a atividade mais recente.
                 rank = (100 if delta > 0 else 0) + (
                     30 if flags & 1048576 else 0
-                ) + completed / total
+                ) + (20 if event and event["active"] else 0) + completed / total
                 candidates.append((rank, candidate))
 
         self.previous = updated
