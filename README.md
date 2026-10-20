@@ -197,3 +197,16 @@ journalctl --user -u bc250-display.service -n 80 --no-pager | grep -E 'Porta con
 ```
 
 O texto `USB: DL:1 enviado ao ESP32` confirma que o monitor encontrou uma tarefa e **escreveu o pacote** no serial. Se ele aparecer, mas o display continuar apenas nas temperaturas, examine USB/firmware. Se não aparecer, rode `stellar_monitor.py --steam-status` e `stellar_monitor.py --cef-debug` para analisar as fontes de dados. A fonte por arquivos **não fornece necessariamente porcentagem ou MB/s em tempo real**; sua finalidade aqui é impedir que a tela suma durante um download reconhecido pelo log.
+
+
+### Estado real `downloading` no Steam CEF (Bazzite)
+
+Caso confirmado em 20/10/2026: `Steam CEF` conectado em `127.0.0.1:8080`, `update_appid=1364780` (Street Fighter 6), `update_state=downloading`, mas monitor anterior registrou **"sem tarefa ativa"** e retornou ao `appmanifest` (8%, sem velocidade). A causa era a comparação restrita a `updating`, `starting` e `stopping`. O leitor foi corrigido para reconhecer também `downloading` e fases de processamento/instalação como `staging`, `installing`, `verifying` e `committing`. Isso é genérico para qualquer AppID; não depende de cadastrar títulos.
+
+Ao atualizar o aplicativo, com a Steam baixando ou instalando, execute **Diagnóstico → Monitorar Steam por 10 segundos** ou:
+
+```bash
+~/.local/share/stellar-app-monitor/.venv/bin/python ~/.local/share/stellar-app-monitor/stellar_monitor.py --steam-watch
+```
+
+O esperado é `Steam CEF (...)` como origem. A fonte CEF lê a cada ciclo os bytes de download, staging e taxa de rede informados pela Steam. O firmware ESP32 não precisa ser regravado. Se a porcentagem permanecer parada, use `--cef-debug` para verificar se os campos realmente mudam; a frequência de consulta não garante que o cliente atualize os dados a cada segundo.
