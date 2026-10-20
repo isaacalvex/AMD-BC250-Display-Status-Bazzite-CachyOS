@@ -154,3 +154,14 @@ Para testar a frequência real, abra **Diagnóstico → Monitorar Steam por 10 s
 
 No Bazzite com Modo Gaming, o caminho frequentemente utilizado é **Steam → Configurações → Sistema → Ativar modo de desenvolvedor** e depois **Desenvolvedor → CEF Remote Debugging**. Reinicie a Steam para aplicar. O controle e a porta disponíveis podem variar conforme a versão do cliente/Bazzite; depuração CEF tem implicações de segurança e deve ser utilizada apenas numa rede confiável. O Stellar nunca a ativa sozinho. Quando disponível, verifica o CEF somente por `127.0.0.1`.
 
+
+
+## Tela de tarefa Steam do início ao fim (download + instalação)
+
+A tela circular continua mostrando **o mesmo aplicativo** enquanto a Steam estiver trabalhando nele, incluindo **download, pré-alocação, preparação em disco (staging), verificação e instalação/commit**. Exemplo real do Bazzite: quando **Proton 11.0** aparece com **403 MB/403 MB baixados** e **instalação 90%**, o display **não** volta às temperaturas; o percentual passa a representar a **tarefa total estimada**. Durante a instalação sem transferência de rede, a velocidade mostra **0,0 MB/s**, embora o disco continue trabalhando.
+
+O sistema detecta automaticamente o **AppID que está executando**, seja jogo, Proton, shader ou redistribuível. Itens somente **na fila** não substituem o aplicativo ativo. Terminando realmente a tarefa, troca para o próximo AppID ativo ou retorna às temperaturas, sem mudar o layout fixo do display.
+
+**Fontes e precisão:** Com CEF habilitado, o progresso é calculado a partir de `update_bytes_downloaded`, `update_bytes_to_download`, `update_bytes_staged`, `update_bytes_to_stage`, com fallback para `update_bytes_processed`/`update_bytes_to_process` quando os totais de staging não estão presentes. Os campos de processamento podem reiniciar entre fases e o total **é estimado**, não uma réplica exata do percentual do Steam. Sem CEF, o serviço consulta a cada segundo os campos equivalentes de `appmanifest_*.acf` e eventos no `content_log.txt`. Os arquivos podem estar atrasados, portanto os números do display podem não mudar toda vez que a tela atualizar. **Não se inventa progresso intermediário.**
+
+No aplicativo, **Diagnóstico → Monitorar Steam por 10 segundos** mostra `etapa=download` ou `etapa=install`, valor e origem a cada amostra, sem interferir no ESP32.
