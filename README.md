@@ -225,3 +225,12 @@ O campo `PCT` continua compatível com o firmware antigo. Para **mostrar 8,37% e
 Em **Diagnóstico → Testar tela de download no ESP32**, o teste envia valores de **65,41% até 65,46%** e velocidades **28,4 a 28,9 MB/s** um por segundo. Com firmware antigo aparece apenas `65%`; com firmware novo aparecem as duas casas.
 
 A velocidade utiliza `SteamClient.Downloads.update_network_bytes_per_second`; quando ela é ausente/zero mas dois snapshots **CEF atuais** comprovam aumento nos bytes baixados, calcula-se uma taxa média entre as amostras CEF. **Não** se usa o delta do arquivo appmanifest para alegar velocidade de rede instantânea. Se o Steam CEF permanecer desatualizado, nem o firmware nem o monitor poderão fabricar progresso real: use `--cef-debug` e confira `update_bytes_downloaded`, `update_bytes_staged`, `update_network_bytes_per_second` e `overviewAgeMs` em quatro amostras consecutivas.
+
+
+### CEF: velocidade ao vivo sem bytes de progresso
+
+Diagnosticado no Bazzite com Street Fighter 6 (AppID 1364780): a Steam enviou velocidades de rede entre 35,80 e 36,83 MB/s com callback recente, mas omitiu os campos de bytes totais do overview. Nessa situação, o Stellar agora preserva a velocidade CEF e combina somente com o progresso do mesmo AppID encontrado no ACF. A porcentagem continua identificada como estimativa via ACF/log; nunca é apresentada como progresso medido ao vivo.
+
+O cache JS foi versionado para recriar a assinatura dos callbacks que podiam ter ficado antigos ao atualizar o aplicativo com a Steam aberta. O diagnóstico --cef-debug passou a mostrar os três primeiros itens, mesmo quando não estão marcados como active, e os nomes dos campos de overview.
+
+Após atualizar o aplicativo, execute os modos --steam-watch e --cef-debug do stellar_monitor.py para verificar se os MB/s mudam nas amostras e se os itens disponibilizam downloaded_bytes e total_bytes. Esta correção é apenas no programa Bazzite/CachyOS: não requer regravar o ESP32 se o firmware já estiver funcionando.
