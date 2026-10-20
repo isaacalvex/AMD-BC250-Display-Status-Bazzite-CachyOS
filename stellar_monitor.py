@@ -292,9 +292,10 @@ def steam_watch(seconds=10):
     finally:
         cef.close()
     if using_files:
-        print('AVISO: percentual via appmanifest/content_log é estimado e '
-              'pode ficar atrasado. Se a origem disser "velocidade Steam CEF "
-              "ao vivo", apenas os MB/s são reais.",flush=True)
+        print('AVISO: o percentual via appmanifest/content_log e estimado '
+              'e pode estar atrasado. Quando a origem inclui velocidade '
+              'Steam CEF ao vivo, somente os MB/s sao leituras ao vivo.',
+              flush=True)
     if len(snapshots) >= 5 and len(set(snapshots)) == 1:
         print('AVISO: Todas as leituras tiveram valores IDÊNTICOS. '
               'O ESP32 está recebendo os mesmos dados; não há confirmação '
