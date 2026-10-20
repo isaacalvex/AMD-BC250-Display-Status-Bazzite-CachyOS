@@ -12,6 +12,7 @@ from pathlib import Path
 import serial
 from steam_downloads import SteamDownloadTracker
 from steam_cef import SteamCEFReader
+from steam_selection import scan_task
 
 BAUDRATE = 115200
 INTERVALO = 1.0  # Segundo: uma leitura e um envio em cada ciclo.
@@ -127,9 +128,12 @@ def steam_status():
     from steam_downloads import _manifest_fields, _content_events, _read
     tracker = SteamDownloadTracker()
     cef = SteamCEFReader()
-    info_cef = cef.scan()
-    info_files = tracker.scan()
-    info = info_cef or info_files
+    info = scan_task(cef, tracker, lambda msg: print(msg,flush=True))
+    # O diagnóstico sempre lista as bibliotecas, mesmo quando o CEF tem
+    # telemetria válida e por isso não foi necessário consultar os arquivos.
+    if not tracker.last_roots:
+        from steam_downloads import steam_roots
+        tracker.last_roots = steam_roots()
     print("Leitura CEF:", cef.diagnostic.status,flush=True)
     if cef.diagnostic.port is not None:
         print("Porta CEF:", cef.diagnostic.port,flush=True)
@@ -256,9 +260,8 @@ def steam_watch(seconds=10):
     try:
         for i in range(seconds):
             start = time.monotonic()
-            live = cef.scan()
-            fallback = tracker.scan() if live is None else None
-            result = live or fallback
+            result = scan_task(cef, tracker)
+            live = result if result and result.source.startswith('Steam CEF') else None
             if result:
                 using_files = using_files or live is None
                 speed = (f'{result.speed_mb_s:.1f} MB/s'
@@ -317,25 +320,15 @@ def main():
                         ser.write(pacote.encode('ascii'))
                         print(pacote.strip(), flush=True)
                     try:
-                        # Preferir valores fornecidos diretamente pelo cliente Steam.
-                        # Sem CEF (recurso opcional), manter a leitura local
-                        # por manifests/logs, que pode atrasar.
-                        download = cef.scan()
-                        # O CEF pode conectar, porém ainda não receber os
-                        # callbacks do jogo em andamento, ou interpretar
-                        # incorretamente um estado interno da Steam.
-                        # Se não houver leitura CEF VÁLIDA, SEMPRE usar
-                        # o log/manifest de fallback. Nunca confundir
-                        # "CEF conectado" com "Steam realmente ociosa".
-                        if download is None:
-                            download = tracker.scan()
+                        # O CEF tem prioridade SOMENTE quando reporta uma
+                        # tarefa válida. CEF ocioso, pendente ou com erro
+                        # não bloqueia o monitor de logs da Steam.
+                        download = scan_task(
+                            cef, tracker,
+                            lambda msg: print(f'Steam: {msg}', flush=True))
                     except Exception as ex:
-                        print(f'Steam: falha temporária na leitura: {ex}', flush=True)
-                        try:
-                            download = tracker.scan()
-                        except Exception as failure:
-                            print(f'Steam: fallback também falhou: {failure}', flush=True)
-                            download = None
+                        print(f'Steam: falha nas fontes de dados: {ex}', flush=True)
+                        download = None
 
                     if download is not None:
                         nome = _nome_serial(download.name)
