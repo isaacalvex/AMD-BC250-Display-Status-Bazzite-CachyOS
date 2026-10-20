@@ -194,6 +194,8 @@ class SteamCEFReader:
         self._name_cache={}
         self._retry_after=0.0
         self._last_counter=None
+        # Taxa de rede pode estar disponível mesmo sem o percentual CEF.
+        self.live_metrics=None
         self.diagnostic=CEFDiagnostic("CEF ainda não consultado",None)
 
     def close(self):
@@ -284,6 +286,7 @@ class SteamCEFReader:
 
     def scan(self) -> Download | None:
         """Seleciona qualquer AppID ativo no Steam, não há títulos fixos."""
+        self.live_metrics=None
         data=self._query()
         if not isinstance(data,dict) or "overview" not in data:
             return None
@@ -331,6 +334,20 @@ class SteamCEFReader:
             return None
         item=next((x for x in items
                    if str(x.get("appid"))==appid),None)
+        # Nem toda versão Steam fornece update_bytes_* no overview.
+        # A VELOCIDADE CEF continua real e deve ser preservada para que
+        # o seletor combine taxa viva com percentual estimado do manifesto.
+        rate=o.get("update_network_bytes_per_second")
+        try:
+            age=data.get("overviewAgeMs")
+            fresh=(age is not None and 0 <= float(age) <= 3500)
+            speed=(max(0,float(rate))/1_000_000
+                   if rate is not None and fresh else None)
+        except (TypeError,ValueError,OverflowError):
+            fresh=False
+            speed=None
+        if speed is not None:
+            self.live_metrics=(appid,round(speed,2),time.monotonic())
         pct_precise=steam_ui_progress_precise(o) if ongoing else None
         if pct_precise is None and item is not None:
             try:
@@ -342,18 +359,11 @@ class SteamCEFReader:
                 pass
         if pct_precise is None:
             self.diagnostic=CEFDiagnostic(
-                "CEF conectado, progresso indisponível",self._socket_port)
+                "CEF conectado: taxa de rede disponível, mas sem contadores "
+                "de progresso no overview" if speed is not None else
+                "CEF conectado: progresso e velocidade indisponíveis",
+                self._socket_port)
             return None
-        rate=o.get("update_network_bytes_per_second")
-        try:
-            age=data.get("overviewAgeMs")
-            fresh=(age is None or 0 <= float(age) <= 3500)
-            speed=(max(0,float(rate))/1_000_000
-                   if rate is not None and fresh else None)
-        except (TypeError,ValueError,OverflowError):
-            fresh=False
-            speed=None
-
         try:
             network_total=int(o.get("update_bytes_to_download") or 0)
             network_done=int(o.get("update_bytes_downloaded") or 0)
@@ -372,6 +382,7 @@ class SteamCEFReader:
                 measured=delta/elapsed/1_000_000
                 if speed is None or speed<=0:
                     speed=measured
+                    self.live_metrics=(appid,round(speed,2),time.monotonic())
         installing=bool(
             _state_is_install(state) or
             (network_total and network_done >= network_total) or
