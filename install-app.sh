@@ -10,6 +10,11 @@ elif [[ ! -e "$DIR" ]]; then git clone --depth=1 "$REPO" "$DIR"
 else echo "Diretório $DIR já existe e não é um repositório Git"; exit 1; fi
 python3 -m venv "$DIR/.venv" || { echo "Falha ao criar venv: verifique python3-venv"; exit 1; }
 "$DIR/.venv/bin/python" -m pip install --disable-pip-version-check -r "$DIR/requirements.txt"
+# Aplicar a nova versão do bridge Python quando o serviço já existe.
+if [[ -f "$HOME/.config/systemd/user/bc250-display.service" ]]; then
+  echo "[Stellar] Reiniciando o serviço de temperaturas e downloads Steam..."
+  systemctl --user restart bc250-display.service || echo "[Stellar] AVISO: falha ao reiniciar serviço; use a tela Serviço para diagnosticar."
+fi
 cat > "$DIR/abrir-stellar.sh" <<'EOS'
 #!/usr/bin/env bash
 set -Eeuo pipefail
