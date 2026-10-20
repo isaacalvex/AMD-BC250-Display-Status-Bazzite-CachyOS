@@ -239,6 +239,7 @@ def cef_debug():
                     # Nomes dos campos: verifica se o build atual expõe
                     # contadores com nomes diferentes dos tipos conhecidos.
                     "overviewKeys":result.get("overviewKeys",[]),
+                    "itemKeys":result.get("itemKeys",[]),
                     # Listar os 3 primeiros itens, mesmo sem active=True.
                     # Em versões antigas isso ocultava o único item presente.
                     # Não incluir nomes, links, tokens ou dados de conta.
