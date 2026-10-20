@@ -24,8 +24,10 @@ from steam_downloads import Download, _manifest_fields, _read, steam_roots
 _JS = r"""(async () => {
   const d = window.SteamClient && window.SteamClient.Downloads;
   if (!d) return {error: "SteamClient.Downloads indisponivel"};
-  if (!window.__stellarDownloadReader) {
-    const cache = window.__stellarDownloadReader = {
+  // Chave versionada: a sessão Steam preserva objetos JS e callbacks antigos
+  // mesmo após atualizar o Python, o que deixa itemsCount > 0 com gotItems=false.
+  if (!window.__stellarDownloadReaderV3) {
+    const cache = window.__stellarDownloadReaderV3 = {
       overview:null, items:[], overviewTime:0, itemsTime:0,
       error:null, ready:false
     };
@@ -45,7 +47,7 @@ _JS = r"""(async () => {
       cache.error = String(e).slice(0,160);
     }
   }
-  const cache = window.__stellarDownloadReader;
+  const cache = window.__stellarDownloadReaderV3;
   // SteamClient informa os dados assincronamente via callbacks. A
   // primeira consulta não deve confundir "ainda não recebido" com "ocioso".
   if (!cache.overview && !cache.itemsTime) {
@@ -82,6 +84,9 @@ _JS = r"""(async () => {
   }));
   return {
     overview, items,
+    overviewKeys: o ? Object.keys(o).filter(k =>
+      /update|download|stage|progress|bytes|process|install|total|state|rate|speed/i.test(k)
+    ).slice(0,75) : [],
     gotOverview: !!o, gotItems: cache.itemsTime > 0,
     downloading: cache.downloading === true,
     overviewAgeMs: cache.overviewTime ? Date.now()-cache.overviewTime : null,
