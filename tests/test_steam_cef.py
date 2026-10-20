@@ -3,7 +3,7 @@ import unittest
 
 from steam_cef import (
     SteamCEFReader, steam_ui_progress, steam_ui_progress_precise,
-    _state_is_active, _state_is_install
+    _native_progress_precise, _state_is_active, _state_is_install
 )
 
 
@@ -348,6 +348,55 @@ class SteamCEFTests(unittest.TestCase):
         item["downloaded_bytes"]=36550000000
         updated=reader.scan()
         self.assertEqual(updated.percent_precise,36.55)
+
+    def test_cef_progress_fraction_overrides_missing_bytes(self):
+        reader=SteamCEFReader()
+        overview={
+            "update_appid":1904480,
+            "update_state":"Preallocating",
+            "progress":0.3472,
+            "paused":False,
+            "update_network_bytes_per_second":0,
+        }
+        reader._query=lambda:{
+            "overview":overview, "gotOverview":True, "items":[],
+            "overviewAgeMs":100
+        }
+        result=reader.scan()
+        self.assertIsNotNone(result)
+        self.assertEqual(result.percent_precise,34.72)
+        self.assertEqual(result.phase,"install")
+        self.assertIn("progresso nativo",result.source)
+        overview["progress"]=0.3581
+        result=reader.scan()
+        self.assertEqual(result.percent_precise,35.81)
+
+    def test_cef_progress_overall_percent_nested_preferred(self):
+        reader=SteamCEFReader()
+        overview={
+            "update_appid":1364780,
+            "update_state":"Downloading",
+            "progress":{"overall_percent_complete":46.83},
+            "paused":False,
+            "update_network_bytes_per_second":35804765,
+        }
+        reader._query=lambda:{
+            "overview":overview,"gotOverview":True,"items":[],
+            "overviewAgeMs":50
+        }
+        result=reader.scan()
+        self.assertEqual(result.percent_precise,46.83)
+        self.assertAlmostEqual(result.speed_mb_s,35.8)
+        overview["progress"]["overall_percent_complete"]=47.21
+        self.assertEqual(reader.scan().percent_precise,47.21)
+
+    def test_progress_invalid_data_does_not_make_up_percentage(self):
+        for value in (-1,120,float("nan"),float("inf"),{},None,True):
+            with self.subTest(value=value):
+                self.assertIsNone(_native_progress_precise({"progress":value}))
+        self.assertEqual(_native_progress_precise({"progress":0.0}),0.0)
+        self.assertEqual(_native_progress_precise(
+            {"overall_percent_complete":77.6}),77.6)
 
     def test_idle_or_paused_is_not_reported_as_download(self):
         reader=SteamCEFReader()
