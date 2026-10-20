@@ -141,3 +141,16 @@ Ao usar **Atualizações → ATUALIZAR → APLICAR ATUALIZAÇÃO**, o ambiente v
 ### Downloads de shaders no Bazzite
 
 A Steam também pode baixar conteúdo de shaders de um jogo e registrar essa transferência como `Shader update changed : Running Update,Downloading,Staging,`. O Stellar agora reconhece esse tipo de transferência, incluindo pausas, interrupções e retomadas. No diagnóstico, `tipo=shader` indica uma transferência de shaders; `tipo=app` indica arquivos do próprio aplicativo. **Não é necessário ativar CEF para identificar esses downloads**. O CEF continua sendo opcional para obter métricas ao vivo mais próximas da interface Steam. Sem ele, a porcentagem calculada pelo manifesto pode atualizar somente em checkpoints e não deve ser confundida com o progresso total exibido pela Steam.
+
+## Monitoramento de qualquer jogo em ciclos de 1 segundo
+
+**Não existe lista fixa de jogos** no código. O Steam indica qual AppID está transferindo dados; o Stellar usa esse AppID e tenta encontrar o nome pela lista de downloads/manifesto da Steam. Quando o usuário passa a baixar outro jogo, o display acompanha o novo AppID automaticamente.
+
+O processo `stellar_monitor.py` executa um ciclo aproximadamente a **cada segundo**, consulta o estado da Steam e envia `DL:1;PCT:...;SPEED:...;NAME:...` em cada ciclo. A frequência de atualização do display não implica que os **valores da Steam** mudem a cada segundo. Para receber medições realmente ao vivo, é necessário que o Steam CEF/CDP esteja **habilitado pelo usuário** e acessível ao serviço; em **Diagnóstico**, a linha `Leitura CEF` informa se a conexão está disponível.
+
+Sem CEF, o monitor recorre ao `appmanifest` e `content_log.txt`: continua genérico para qualquer AppID presente nesses arquivos, mas **não existe garantia de porcentagem correta ou nova leitura a cada segundo**. O monitor não inventa valores intermediários e a velocidade aparece como `-- MB/s` se a Steam não fornecer medições recentes.
+
+Para testar a frequência real, abra **Diagnóstico → Monitorar Steam por 10 segundos**: o painel apresentará dez amostras numeradas, cada uma indicando o jogo, o percentual, a velocidade e a **fonte** dos dados. O teste não grava firmware, não interrompe o serviço USB e não altera a Steam.
+
+No Bazzite com Modo Gaming, o caminho frequentemente utilizado é **Steam → Configurações → Sistema → Ativar modo de desenvolvedor** e depois **Desenvolvedor → CEF Remote Debugging**. Reinicie a Steam para aplicar. O controle e a porta disponíveis podem variar conforme a versão do cliente/Bazzite; depuração CEF tem implicações de segurança e deve ser utilizada apenas numa rede confiável. O Stellar nunca a ativa sozinho. Quando disponível, verifica o CEF somente por `127.0.0.1`.
+
