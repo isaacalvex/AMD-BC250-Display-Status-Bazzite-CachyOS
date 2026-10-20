@@ -236,7 +236,13 @@ def cef_debug():
                     "overviewAgeMs":result.get("overviewAgeMs"),
                     "downloading":result.get("downloading"),
                     "overview":result.get("overview",{}),
-                    "activeItems":[{
+                    # Nomes dos campos: verifica se o build atual expõe
+                    # contadores com nomes diferentes dos tipos conhecidos.
+                    "overviewKeys":result.get("overviewKeys",[]),
+                    # Listar os 3 primeiros itens, mesmo sem active=True.
+                    # Em versões antigas isso ocultava o único item presente.
+                    # Não incluir nomes, links, tokens ou dados de conta.
+                    "items":[{
                         "appid":x.get("appid"),
                         "active":x.get("active"),
                         "completed":x.get("completed"),
@@ -244,7 +250,7 @@ def cef_debug():
                         "downloaded_bytes":x.get("downloaded_bytes"),
                         "total_bytes":x.get("total_bytes"),
                     } for x in result.get("items",[])
-                       if isinstance(x,dict) and x.get("active")][:3],
+                       if isinstance(x,dict)][:3],
                     "itemsCount":len(result.get("items",[])),
                     "error":result.get("error")
                 }
