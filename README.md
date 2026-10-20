@@ -183,3 +183,17 @@ Se `--steam-status` disser **CEF conectado, aguardando primeira telemetria Steam
 ```
 
 O diagnóstico produz **quatro amostras** de `api`, `gotOverview`, `gotItems`, `overview` e IDs de aplicativos ativos. Não recolhe cookies ou informações da conta. Envie o resultado para conferir a estrutura dos dados da **versão específica da Steam** antes de alterar novamente o algoritmo. Não é necessário reiniciar a Steam ou regravar firmware se a porta 8080 já está respondendo.
+
+
+### Correção: download ativo mas ESP32 continua nas temperaturas
+
+Problema reproduzido: a Steam registra `AppID 1364780 App update changed : Running Update,Downloading,Staging,` (Street Fighter 6), mas CEF conectado na porta 8080 reporta **sem tarefa ativa**. O monitor anteriormente deixava de consultar os arquivos por interpretar a resposta CEF como confirmação definitiva de que não havia downloads. Agora o serviço usa `steam_selection.scan_task`: **prioriza CEF quando há telemetria válida e consulta `content_log.txt`/`appmanifest` SEMPRE que o CEF não detectar uma tarefa válida**, mesmo com CEF conectado. O firmware não muda.
+
+Após atualizar o aplicativo pelo instalador, reinicie/valide:
+
+```bash
+systemctl --user restart bc250-display.service
+journalctl --user -u bc250-display.service -n 80 --no-pager | grep -E 'Porta conectada|USB: DL:1|Steam tarefa|Fonte fallback|falha|USB desconectado'
+```
+
+O texto `USB: DL:1 enviado ao ESP32` confirma que o monitor encontrou uma tarefa e **escreveu o pacote** no serial. Se ele aparecer, mas o display continuar apenas nas temperaturas, examine USB/firmware. Se não aparecer, rode `stellar_monitor.py --steam-status` e `stellar_monitor.py --cef-debug` para analisar as fontes de dados. A fonte por arquivos **não fornece necessariamente porcentagem ou MB/s em tempo real**; sua finalidade aqui é impedir que a tela suma durante um download reconhecido pelo log.
