@@ -124,7 +124,7 @@ def pacote_download(download):
 
 
 def steam_status():
-    from steam_downloads import _ACF_FIELD, _content_events, _read
+    from steam_downloads import _manifest_fields, _content_events, _read
     tracker = SteamDownloadTracker()
     cef = SteamCEFReader()
     info_cef = cef.scan()
@@ -148,7 +148,7 @@ def steam_status():
         print(f"   appmanifest disponíveis: {len(manifests)}", flush=True)
         shown = 0
         for path in manifests:
-            fields = dict(_ACF_FIELD.findall(_read(path)))
+            fields = _manifest_fields(_read(path))
             try:
                 flags = int(fields.get("StateFlags", "0"))
                 total = int(fields.get("BytesToDownload", "0"))
