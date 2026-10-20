@@ -55,7 +55,9 @@ class SteamDownloadTests(unittest.TestCase):
         manifest(self.root, "40", "Counter-Strike 2", 3_000_000, 10_000_000, 1048576)
         item = tr.scan()
         self.assertEqual(item.percent, 30)
-        self.assertGreater(item.speed_mb_s, 0)
+        # O ACF pode salvar vários minutos acumulados num checkpoint:
+        # isso não é velocidade instantânea de rede.
+        self.assertIsNone(item.speed_mb_s)
 
     def test_log_rate_mbps_to_mb_s(self):
         manifest(self.root, "50", "Jogo", 100, 1000, 1048576)
@@ -66,6 +68,20 @@ class SteamDownloadTests(unittest.TestCase):
             f"[{stamp}] Current download rate: 80.000 Mbps\n", encoding="utf-8")
         item = SteamDownloadTracker().scan()
         self.assertAlmostEqual(item.speed_mb_s, 10.0)
+
+    def test_expired_steam_log_rate_not_repeated(self):
+        manifest(self.root, "501", "Download com taxa antiga",
+                 20000000, 100000000, 1048576)
+        logdir=self.root / "logs"
+        logdir.mkdir()
+        stamp=time.strftime("%Y-%m-%d %H:%M:%S",
+                            time.localtime(time.time()-20))
+        (logdir / "content_log.txt").write_text(
+            f"[{stamp}] Current download rate: 25.6 Mbps\n",
+            encoding="utf-8")
+        result=SteamDownloadTracker().scan()
+        self.assertIsNotNone(result)
+        self.assertIsNone(result.speed_mb_s)
 
     def test_real_steam_log_app_update_changed(self):
         # Formato exato usado por versões recentes da Steam no Linux.
