@@ -371,7 +371,12 @@ def main():
                             print(f'Steam tarefa ({download.source}): {nome} | '
                                   f'{pct_exibido}% | {taxa} | etapa={download.phase}', flush=True)
                             if download.source.startswith('Steam CEF'):
-                                print('Fonte: Steam CEF ao vivo (percentual total estimado).',flush=True)
+                                if 'progresso nativo Steam' in download.source:
+                                    print('Fonte: Steam CEF ao vivo (progresso nativo Steam).',
+                                          flush=True)
+                                else:
+                                    print('Fonte: Steam CEF ao vivo (progresso estimado).',
+                                          flush=True)
                             else:
                                 print(f'Fonte fallback: {cef.diagnostic.status}; '
                                       'progresso de arquivos pode estar atrasado.',flush=True)
