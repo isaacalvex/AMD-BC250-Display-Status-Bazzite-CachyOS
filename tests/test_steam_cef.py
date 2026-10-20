@@ -217,7 +217,7 @@ class SteamCEFTests(unittest.TestCase):
                 "paused":False,
                 "update_bytes_downloaded":100,
                 "update_bytes_to_download":100,
-                "update_bytes_staged":85,
+                "update_bytes_staged":86,
                 "update_bytes_to_stage":100,
                 "update_network_bytes_per_second":0
             },
