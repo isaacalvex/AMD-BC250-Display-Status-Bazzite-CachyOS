@@ -101,3 +101,12 @@ Na página **Diagnóstico**, clique em **Verificar downloads Steam**. O app most
 
 Se houver um jogo em download e o diagnóstico não o identificar, confira se a Steam está escrevendo `appmanifest_*.acf` e se a biblioteca aparece em `libraryfolders.vdf`. A detecção foi desenvolvida com arquivos locais da Steam, e o formato desses arquivos pode mudar em futuras versões do cliente. A leitura da velocidade vem de entradas recentes do log ou da variação do contador de bytes; **não é garantido que corresponda exatamente ao indicador da interface Steam em cada instante**.
 
+
+### Se o download não aparecer no ESP32
+
+Não é necessário regravar o firmware para testar alterações apenas no Python. Depois de **Atualizações → ATUALIZAR → APLICAR ATUALIZAÇÃO**, vá a **Diagnóstico** e use dois testes independentes:
+
+1. **TESTAR TELA DE DOWNLOAD NO ESP32**: interrompe brevemente o serviço com sua confirmação, envia um exemplo de download por USB (65%, 28,4 MB/s, TESTE STELLAR), encerra o exemplo e restaura o serviço. **Nenhum firmware é gravado nesse teste.** Se a tela mudar, o display e o protocolo estão funcionando.
+2. **Verificar downloads Steam**: com um jogo realmente baixando, lista bibliotecas, contadores dos manifests e eventos recentes de `content_log.txt`. O leitor foi ajustado para downloads longos e para manifests que só são salvos em checkpoints.
+
+Se o teste visual funcionar, mas o diagnóstico mostrar **nenhum jogo**, o problema está na fonte de dados da Steam; copie o diagnóstico para análise, sem alterar arquivos ou permissões da Steam. Os números na Steam podem não estar disponíveis em tempo real por meio dos arquivos locais.
