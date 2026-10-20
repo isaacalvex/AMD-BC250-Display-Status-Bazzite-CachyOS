@@ -5,6 +5,7 @@ on:
     paths:
       - 'main.py'
       - 'steam_downloads.py'
+      - 'steam_cef.py'
       - 'stellar_monitor.py'
       - 'tests/**'
       - '.github/workflows/verify-steam.yml'
@@ -21,6 +22,6 @@ jobs:
         with:
           python-version: '3.12'
       - name: Verificar sintaxe
-        run: python -m py_compile main.py steam_downloads.py stellar_monitor.py tests/test_steam_downloads.py
+        run: python -m py_compile main.py steam_cef.py steam_downloads.py stellar_monitor.py tests/test_steam_downloads.py tests/test_steam_cef.py
       - name: Testes locais de manifest Steam
         run: python -m unittest discover -s tests -v
