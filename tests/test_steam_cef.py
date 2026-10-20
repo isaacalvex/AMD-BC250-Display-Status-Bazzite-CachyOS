@@ -126,6 +126,52 @@ class SteamCEFTests(unittest.TestCase):
            "update_bytes_processed":90}
         self.assertEqual(steam_ui_progress(o),95)
 
+    def test_initial_callbacks_pending_is_not_idle(self):
+        reader=SteamCEFReader()
+        reader._query=lambda:{
+            "overview":{},"items":[],
+            "gotOverview":False,"gotItems":False
+        }
+        self.assertIsNone(reader.scan())
+        self.assertIn("aguardando primeira telemetria",reader.diagnostic.status)
+
+    def test_live_state_without_items_still_detects_any_app(self):
+        reader=SteamCEFReader()
+        reader._query=lambda:{
+            "overview":{
+                "update_appid":1364780,
+                "update_state":"Updating",
+                "update_bytes_downloaded":22,
+                "update_bytes_to_download":100,
+                "update_bytes_staged":10,
+                "update_bytes_to_stage":100,
+                "update_network_bytes_per_second":2300000
+            },
+            "items":[],"gotOverview":True,"gotItems":False,
+            "overviewAgeMs":500
+        }
+        item=reader.scan()
+        self.assertIsNotNone(item)
+        self.assertEqual(item.appid,"1364780")
+        self.assertEqual(item.percent,16)
+        self.assertEqual(item.speed_mb_s,2.3)
+
+    def test_stale_callback_cannot_report_old_speed(self):
+        reader=SteamCEFReader()
+        reader._query=lambda:{
+            "overview":{
+                "update_appid":100,
+                "update_state":"Updating",
+                "update_bytes_downloaded":50,
+                "update_bytes_to_download":100,
+                "update_network_bytes_per_second":3000000
+            },"items":[],"gotOverview":True,
+            "overviewAgeMs":9000
+        }
+        info=reader.scan()
+        self.assertIsNotNone(info)
+        self.assertIsNone(info.speed_mb_s)
+
     def test_idle_or_paused_is_not_reported_as_download(self):
         reader=SteamCEFReader()
         sample={"overview":{"update_appid":123,"update_state":"Updating",
