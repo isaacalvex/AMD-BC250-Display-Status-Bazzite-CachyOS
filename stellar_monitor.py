@@ -123,10 +123,13 @@ def pacote_download(download):
     precisa = (download.percent_precise
                if download.percent_precise is not None
                else float(download.percent))
-    # PCTF ANTES de PCT: o firmware atual ignora PCTF e mantém a tela
-    # funcional; o firmware novo usa a precisão centesimal para o anel.
-    return (f'DL:1;PCTF:{precisa:.2f};PCT:{download.percent};'
-            f'SPEED:{velocidade};NAME:{nome}\n').encode('utf-8')
+    # UNIT vem ANTES dos campos antigos: o firmware antigo ignora
+    # UNIT e continua mostrando SPEED em MB/s. O firmware novo usa
+    # UNIT:Mbps para mostrar a velocidade igual a Steam em bits/s.
+    # SPEED permanece em MB/s para manter todo o protocolo legado.
+    return (f'DL:1;UNIT:Mbps;PCTF:{precisa:.2f};'
+            f'PCT:{download.percent};SPEED:{velocidade};'
+            f'NAME:{nome}\n').encode('utf-8')
 
 
 def steam_status():
