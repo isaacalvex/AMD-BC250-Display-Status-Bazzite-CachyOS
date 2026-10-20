@@ -347,6 +347,9 @@ class Window(QMainWindow):
         j.cmd(['git','-C',str(BASE),'merge','--ff-only','FETCH_HEAD'],60)
         j.emit('Atualizando dependências Python...')
         j.cmd([sys.executable,'-m','pip','install','--disable-pip-version-check','-r',str(BASE/'requirements.txt')],240)
+        if UNIT_PATH.is_file():
+            j.emit('Reiniciando o serviço para ativar o novo monitor Steam...')
+            j.cmd(['systemctl','--user','restart',UNIT],40)
         j.emit('Aplicação concluída. Reiniciando...')
     def finished(ok,msg):
         if not ok:
