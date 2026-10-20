@@ -340,7 +340,7 @@ class SteamCEFReader:
         rate=o.get("update_network_bytes_per_second")
         try:
             age=data.get("overviewAgeMs")
-            fresh=(age is not None and 0 <= float(age) <= 3500)
+            fresh=(age is None or 0 <= float(age) <= 3500)
             speed=(max(0,float(rate))/1_000_000
                    if rate is not None and fresh else None)
         except (TypeError,ValueError,OverflowError):
