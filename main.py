@@ -372,11 +372,15 @@ class Window(QMainWindow):
     rc,run=command(['systemctl','--user','is-active',UNIT],5)
     rc,en=command(['systemctl','--user','is-enabled',UNIT],5)
     connected=ports()
+    selected=self.combo.currentData() if self.combo.count() else None
+    usb_port=selected if selected in [x.device for x in connected] else (connected[0].device if connected else None)
+    usb_ok,usb_detail=usb_access(usb_port)
+    usb_state=('Conectado' if usb_ok else 'Sem permissão USB' if usb_port else 'Desconectado')
     service_log=command(['journalctl','--user','-u',UNIT,'--since','20 seconds ago','--no-pager','-n','12'],5)[1]
     values={'installed':(exists,'Instalado' if exists else 'Não instalado'),
             'running':(run=='active','Ativo' if run=='active' else 'Parado'),
             'enabled':(en=='enabled','Habilitado' if en=='enabled' else 'Desabilitado'),
-            'usb':(bool(connected),'Conectado' if connected else 'Desconectado'),
+            'usb':(usb_ok,usb_state),
             'sending':('CPU:' in service_log and 'GPU:' in service_log,'Ver logs' if not service_log else ('Enviando' if 'CPU:' in service_log and 'GPU:' in service_log else 'Não confirmado')),
             'display':(None,'Não confirmada')}
     for key,(ok,val) in values.items():
