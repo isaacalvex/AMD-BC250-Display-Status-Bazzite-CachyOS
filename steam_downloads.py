@@ -45,6 +45,23 @@ def _read(path: Path, limit: int = 2_000_000) -> str:
         return ""
 
 
+def _manifest_fields(data: str) -> dict[str, str]:
+    """Campos de AppState, sem confundir com dados de DLCs aninhados."""
+    depth = 0
+    fields: dict[str, str] = {}
+    for line in data.splitlines():
+        stripped = line.strip()
+        if stripped == "{":
+            depth += 1
+        elif stripped == "}":
+            depth = max(0, depth - 1)
+        elif depth == 1:
+            match = _ACF_FIELD.match(line)
+            if match:
+                fields[match.group(1)] = match.group(2)
+    return fields
+
+
 def _number(value: str) -> int:
     try:
         return max(0, int(value))
@@ -255,7 +272,7 @@ class SteamDownloadTracker:
                 match = _APP_MANIFEST.match(manifest.name)
                 if not match:
                     continue
-                fields = dict(_ACF_FIELD.findall(_read(manifest)))
+                fields = _manifest_fields(_read(manifest))
                 appid = match.group(1)
                 total = _number(fields.get("BytesToDownload", "0"))
                 completed = _number(fields.get("BytesDownloaded", "0"))
