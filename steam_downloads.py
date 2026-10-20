@@ -36,6 +36,7 @@ class Download:
     total: int
     source: str
     phase: str = "download"
+    percent_precise: float | None = None
 
 
 def _read(path: Path, limit: int = 2_000_000) -> str:
@@ -320,7 +321,8 @@ class SteamDownloadTracker:
                 overall_total = total + stage_total
                 if overall_total > 0:
                     done = min(completed, total) + min(staged, stage_total)
-                    pct = max(0, min(99, round(100 * done / overall_total)))
+                    precise_pct = max(0.0, min(99.99, round(100 * done / overall_total, 2)))
+                    pct = max(0, min(99, round(precise_pct)))
                 else:
                     continue
 
@@ -338,7 +340,8 @@ class SteamDownloadTracker:
                                   f"AppID {appid}").split())[:100]
                 candidate = Download(
                     appid, name, pct, measured, completed, total,
-                    str(manifest) + " (estimativa via ACF/log)", phase)
+                    str(manifest) + " (estimativa via ACF/log)", phase,
+                    precise_pct)
                 # Prioriza tarefas REALMENTE executando, mesmo com rede 0.
                 age = max(0, now-event["time"]) if event else 999999
                 rank = (1000 if log_active else 0) + (
@@ -360,4 +363,5 @@ class SteamDownloadTracker:
         return Download(
             chosen.appid, chosen.name, chosen.percent,
             round(speed, 1) if speed is not None else None,
-            chosen.completed, chosen.total, chosen.source, chosen.phase)
+            chosen.completed, chosen.total, chosen.source, chosen.phase,
+            chosen.percent_precise)
