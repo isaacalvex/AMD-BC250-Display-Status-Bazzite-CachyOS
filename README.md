@@ -116,3 +116,24 @@ Não é necessário regravar o firmware para testar alterações apenas no Pytho
 2. **Verificar downloads Steam**: com um jogo realmente baixando, lista bibliotecas, contadores dos manifests e eventos recentes de `content_log.txt`. O leitor foi ajustado para downloads longos e para manifests que só são salvos em checkpoints.
 
 Se o teste visual funcionar, mas o diagnóstico mostrar **nenhum jogo**, o problema está na fonte de dados da Steam; copie o diagnóstico para análise, sem alterar arquivos ou permissões da Steam. Os números na Steam podem não estar disponíveis em tempo real por meio dos arquivos locais.
+
+
+## Progresso Steam em tempo real (CEF, opcional)
+
+O serviço agora prioriza a interface de telemetria **SteamClient.Downloads** quando o **CEF Remote Debugging** já está habilitado no Steam. Lê pelo endereço **127.0.0.1** somente, sem executar comandos que alterem downloads e sem mudar as opções do Steam. Obtém o **jogo em download**, os **bytes baixados**, o **progresso de preparação em disco** e a **velocidade instantânea** da própria Steam. O monitor verifica aproximadamente a cada segundo.
+
+A porcentagem usa bytes de transferência e staging combinados. Isso tende a acompanhar melhor a barra **geral** do Steam do que o cálculo anterior com `BytesDownloaded/BytesToDownload`, mas **não garante identidade exata** com a interface, especialmente durante outras etapas de processamento e instalação.
+
+**Não habilitamos a depuração CEF automaticamente.** Ela disponibiliza recursos de diagnóstico do Steam e deve permanecer acessível somente localmente. Alguns sistemas Bazzite/SteamOS oferecem o controle nas configurações de desenvolvedor do cliente (Modo Gaming). No Steam Desktop, a opção também pode ser ativada ao iniciar o cliente com `-cef-enable-debugging`, mas isso exige encerrar e abrir novamente a Steam e pode interromper a sessão de downloads. Faça essa mudança somente se desejar o progresso mais próximo do tempo real.
+
+Para conferir se o serviço local está disponível, execute:
+
+```bash
+curl --connect-timeout 1 --max-time 2 -s http://127.0.0.1:8080/json
+curl --connect-timeout 1 --max-time 2 -s http://127.0.0.1:8081/json
+```
+
+Quando a Steam CEF não está disponível, o app continua funcionando via arquivos `appmanifest` e `content_log.txt`, mas nesse caso o percentual pode **ficar parado durante a transferência ou não coincidir com a barra do cliente**. A tela **Diagnóstico → Verificar downloads Steam** passa a identificar a fonte de informação utilizada (CEF ao vivo ou arquivos locais).
+
+Ao usar **Atualizações → ATUALIZAR → APLICAR ATUALIZAÇÃO**, o ambiente virtual instala automaticamente a biblioteca `websocket-client` e reinicia o serviço de envio. **Não é necessário atualizar o firmware ESP32 novamente.**
+
