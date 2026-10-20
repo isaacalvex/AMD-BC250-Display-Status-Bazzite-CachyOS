@@ -344,13 +344,19 @@ def main():
                             print(f'USB: DL:1 enviado ao ESP32 — AppID {download.appid}, '
                                   f'{nome}, {download.percent}%, fase={download.phase}',
                                   flush=True)
-                        if (last_steam_identity != (download.appid, download.percent) or
+                        pct_exibido=(f'{download.percent_precise:.2f}'
+                                     if download.percent_precise is not None
+                                     else str(download.percent))
+                        identidade=(download.appid, pct_exibido,
+                                    round(download.speed_mb_s, 1)
+                                    if download.speed_mb_s is not None else None)
+                        if (last_steam_identity != identidade or
                             last_steam_source != download.source or
                             time.monotonic() - last_steam_report >= 8):
                             taxa = (f'{download.speed_mb_s:.1f} MB/s'
                                     if download.speed_mb_s is not None else 'indisponível')
                             print(f'Steam tarefa ({download.source}): {nome} | '
-                                  f'{download.percent}% | {taxa} | etapa={download.phase}', flush=True)
+                                  f'{pct_exibido}% | {taxa} | etapa={download.phase}', flush=True)
                             if download.source.startswith('Steam CEF'):
                                 print('Fonte: Steam CEF ao vivo (percentual total estimado).',flush=True)
                             else:
@@ -358,7 +364,7 @@ def main():
                                       'progresso de arquivos pode estar atrasado.',flush=True)
                             last_steam_report = time.monotonic()
                             last_steam_source = download.source
-                            last_steam_identity = (download.appid, download.percent)
+                            last_steam_identity = identidade
                         download_anterior = True
                     elif download_anterior:
                         ser.write(b'DL:0\n')
