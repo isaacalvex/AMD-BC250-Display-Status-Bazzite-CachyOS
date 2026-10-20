@@ -171,3 +171,15 @@ No aplicativo, **Diagnóstico → Monitorar Steam por 10 segundos** mostra `etap
 Se o diagnóstico repetir `appmanifest_... (estimativa via ACF/log)`, mesmo consultando a cada segundo, **não existe amostra de rede nova**. O arquivo ACF não contém telemetria instantânea. O serviço foi corrigido para **não interpretar saltos dos bytes do ACF como velocidade de rede** e descartar valores de taxa do log com mais de 3 segundos. Em vez de repetir uma taxa histórica, mostra `-- MB/s` quando não existe velocidade verificável. **Isso não torna o percentual por ACF uma porcentagem ao vivo.**
 
 Para usar a leitura em tempo real, depois de terminar downloads em andamento, feche completamente a Steam pelo menu **Steam → Sair**. No Desktop do Bazzite, a Steam nativa pode ser iniciada com `steam -cef-enable-debugging`. O parâmetro só vale em uma nova inicialização do cliente. Na versão com modo Gaming, também pode haver a opção **CEF Remote Debugging** em Configurações de Desenvolvedor. Não exponha as portas de depuração à rede ou à internet. Verifique somente localmente `http://127.0.0.1:8080/json` e `http://127.0.0.1:8081/json`. Assim que a fonte CEF estiver disponível, o serviço existente tentará conectá-la automaticamente, sem regravar o ESP32.
+
+## Steam CEF conecta, mas informa "nenhum download ativo"
+
+Em clientes Steam recentes, o CEF no `SharedJSContext` utiliza **callbacks assíncronos** para `RegisterForDownloadOverview` e `RegisterForDownloadItems`. Um resultado inicial vazio **não significa** que os downloads terminaram. O leitor aguarda a primeira resposta antes de interpretar um estado como ocioso. A documentação da API do cliente expõe esses callbacks, mas nem sempre expõe `GetDownloadOverview`, portanto este último não é obrigatório.
+
+Se `--steam-status` disser **CEF conectado, aguardando primeira telemetria SteamClient** ou **CEF conectado, sem tarefa ativa**, mas o `content_log.txt` mostrar `Running Update,Downloading,Staging`, use o diagnóstico abaixo com a Steam aberta:
+
+```bash
+~/.local/share/stellar-app-monitor/.venv/bin/python ~/.local/share/stellar-app-monitor/stellar_monitor.py --cef-debug
+```
+
+O diagnóstico produz **quatro amostras** de `api`, `gotOverview`, `gotItems`, `overview` e IDs de aplicativos ativos. Não recolhe cookies ou informações da conta. Envie o resultado para conferir a estrutura dos dados da **versão específica da Steam** antes de alterar novamente o algoritmo. Não é necessário reiniciar a Steam ou regravar firmware se a porta 8080 já está respondendo.
