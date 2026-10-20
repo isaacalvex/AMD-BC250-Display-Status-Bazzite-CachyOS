@@ -153,6 +153,73 @@ class SteamDownloadTests(unittest.TestCase):
             encoding="utf-8")
         self.assertIsNone(SteamDownloadTracker().scan())
 
+    def test_bazzite_shader_real_log_active(self):
+        # Evidência real do Bazzite: AppID 1794680 / Vampire Survivors.
+        manifest(self.root, "1794680", "Vampire Survivors",
+                 2934016, 502455904, 1042)
+        logdir = self.root / "logs"
+        logdir.mkdir()
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+        (logdir / "content_log.txt").write_text(
+            f"[{stamp}] AppID 1794680 update started : download "
+            "2934016/502455904, store 0/0, reuse 0/0, "
+            "delta 0/0, stage 3045105/1130055333\n"
+            f"[{stamp}] AppID 1794680 Shader update changed : "
+            "Running Update,Downloading,Staging,\n",
+            encoding="utf-8")
+        data = SteamDownloadTracker().scan()
+        self.assertIsNotNone(data)
+        self.assertEqual(data.name, "Vampire Survivors")
+        self.assertEqual(data.appid, "1794680")
+        self.assertEqual(data.percent, 1)
+
+    def test_shader_stop_and_resume(self):
+        manifest(self.root, "1794680", "Vampire Survivors",
+                 2934016, 502455904, 1042)
+        logdir = self.root / "logs"
+        logdir.mkdir()
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+        path = logdir / "content_log.txt"
+        start = (
+            f"[{stamp}] AppID 1794680 Shader update changed : "
+            "Running Update,Downloading,Staging,\n"
+        )
+        stopping = (
+            f"[{stamp}] AppID 1794680 Shader update changed : "
+            "Running Update,Downloading,Staging,Stopping,\n"
+            f"[{stamp}] AppID 1794680 Shader update changed : "
+            "Running Update,Stopping,\n"
+            f"[{stamp}] AppID 1794680 Shader update changed : None\n"
+        )
+        path.write_text(start + stopping, encoding="utf-8")
+        self.assertIsNone(SteamDownloadTracker().scan())
+        # Retomar a fila NÃO basta; precisa efetivamente de Downloading.
+        path.write_text(start + stopping +
+            f"[{stamp}] AppID 1794680 state changed : "
+            "Update Required,Update Queued,Update Started,\n",
+            encoding="utf-8")
+        self.assertIsNone(SteamDownloadTracker().scan())
+        path.write_text(start + stopping +
+            f"[{stamp}] AppID 1794680 state changed : "
+            "Update Required,Update Queued,Update Started,\n"
+            + start,
+            encoding="utf-8")
+        self.assertIsNotNone(SteamDownloadTracker().scan())
+
+    def test_shader_staging_no_longer_network_download(self):
+        manifest(self.root, "1794680", "Vampire Survivors",
+                 2934016, 502455904, 1042)
+        logdir = self.root / "logs"
+        logdir.mkdir()
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+        (logdir / "content_log.txt").write_text(
+            f"[{stamp}] AppID 1794680 Shader update changed : "
+            "Running Update,Downloading,Staging,\n"
+            f"[{stamp}] AppID 1794680 Shader update changed : "
+            "Running Update,Staging,\n",
+            encoding="utf-8")
+        self.assertIsNone(SteamDownloadTracker().scan())
+
     def test_secondary_library(self):
         extra = Path(self.tmp.name) / "games"
         manifest(extra, "60", "Jogo externo", 25, 100, 1048576)
