@@ -33,7 +33,7 @@ Logs de cada operação ficam visíveis na parte inferior em todas as páginas. 
 2. Na página **Serviço**, clique **Instalar/Atualizar**.
 3. Conecte a placa ESP32-C3 com GC9A01, selecione a porta em **Dispositivos USB**, clique **Usar esta porta**.
 4. Inicie o serviço e confira as temperaturas na **Visão geral**.
-5. Em **Firmware**, clique **Atualizar firmware** quando precisar regravar. A primeira atualização prepara automaticamente o ambiente Arduino CLI e compila o firmware oficial no próprio computador, o que requer Internet e espaço em disco. As seguintes atualizações reutilizam o binário compilado. **Não desconecte a placa durante a gravação.**
+5. Em **Firmware**, clique **Atualizar firmware** quando precisar regravar. A primeira atualização prepara automaticamente o ambiente Arduino CLI e compila o firmware oficial no próprio computador, o que requer Internet e espaço em disco. As próximas atualizações reutilizam o binário somente enquanto o código .ino oficial não mudar; ao mudar, o firmware é recompilado automaticamente. **Não desconecte a placa durante a gravação.**
 
 O firmware é destinado à pinagem do projeto original (MOSI 7, SCLK 6, CS 10, DC 2, BL 3). Placas ESP32-C3 com outra tela/pinagem podem precisar de firmware diferente. O aplicativo valida o tipo de chip via esptool.
 
@@ -68,3 +68,30 @@ Após reiniciar, verifique `id -nG` e teste **Dispositivos USB → Testar porta*
 Se o Bazzite ou CachyOS mostrar `Permission denied: '/dev/ttyACM0'`, isso indica que o firmware pode estar compilado, mas o usuário da sessão não tem acesso ao dispositivo. Em **Dispositivos USB → Corrigir permissões USB**, o aplicativo verifica dono, grupo e acesso de leitura/gravação antes de gravar. Para grupos `dialout` e `uucp`, ele pode solicitar autorização administrativa e incluir o usuário no grupo correto. **É necessário sair da sessão gráfica e entrar novamente** para ativar a nova associação de grupos. Não use `chmod 777` nas portas.
 
 Para diagnosticar pelo terminal: `ls -l /dev/ttyACM0` e `id -nG`. Antes de preparar ou gravar firmware, o aplicativo verifica permissões e apresenta uma explicação, evitando compilar sem possibilidade de acessar a placa. Depois que as permissões forem corrigidas, o firmware já compilado é reutilizado.
+
+
+## Downloads de jogos Steam no display STELLAR
+
+O monitor Python procura Steam instalada no Linux (Bazzite, CachyOS e Flatpak), inclusive bibliotecas em outros discos definidas no arquivo \`libraryfolders.vdf\`. Ele consulta os arquivos **Steam appmanifest_*.acf**, que contêm o nome do jogo e os contadores **BytesDownloaded / BytesToDownload**, e o arquivo **content_log.txt**, que pode registrar a velocidade global de download. Sem API oficial pública de atualização contínua, esses dados podem mudar apenas em intervalos — **a porcentagem pode demorar a atualizar**. O serviço não altera nenhum arquivo da Steam.
+
+Quando o monitor encontra uma transferência ativa, envia pela mesma USB do ESP32-C3:
+
+\`\`\`text
+CPU:46.6;GPU:44.0
+DL:1;PCT:65;SPEED:28.4;NAME:Cyberpunk 2077
+\`\`\`
+
+Se a velocidade não estiver disponível, envia \`SPEED:-1\` e o display mostra **-- MB/s**, em vez de inventar um valor. Quando a transferência termina ou é pausada, envia \`DL:0\` e volta às temperaturas. O nome fica **sempre em uma linha**, cortado com \`...\` sem alterar a posição da porcentagem, velocidade ou círculo.
+
+Para ativar, atualize o app pelo menu **Atualizações → ATUALIZAR → APLICAR ATUALIZAÇÃO**. O serviço \`bc250-display.service\` é reiniciado automaticamente. Em seguida, vá à tela **Firmware → Atualizar firmware**; o app verifica o novo \`.ino\`, recompila somente se necessário e grava o ESP32. **Atualizar apenas o app sem regravar o firmware não cria a nova tela no display.**
+
+### Verificação da Steam
+
+Na página **Diagnóstico**, clique em **Verificar downloads Steam**. O app mostrará as bibliotecas encontradas e o download ativo, se houver. No terminal, o mesmo diagnóstico pode ser consultado com:
+
+\`\`\`bash
+~/.local/share/stellar-app-monitor/.venv/bin/python ~/.local/share/stellar-app-monitor/stellar_monitor.py --steam-status
+\`\`\`
+
+Se houver um jogo em download e o diagnóstico não o identificar, confira se a Steam está escrevendo \`appmanifest_*.acf\` e se a biblioteca aparece em \`libraryfolders.vdf\`. A detecção foi desenvolvida com arquivos locais da Steam, e o formato desses arquivos pode mudar em futuras versões do cliente. A leitura da velocidade vem de entradas recentes do log ou da variação do contador de bytes; **não é garantido que corresponda exatamente ao indicador da interface Steam em cada instante**.
+
