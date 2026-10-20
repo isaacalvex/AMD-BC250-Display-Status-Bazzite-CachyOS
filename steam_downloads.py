@@ -119,7 +119,7 @@ def _steam_rate(roots: list[Path], now: float) -> float | None:
 
 
 # Esses formatos foram conferidos com content_log.txt reais da Steam Linux.
-_EVENT = re.compile(r'AppID\s+(\d+)\s+(update changed|state changed)\s*:\s*(.*)', re.I)
+_EVENT = re.compile(r'AppID\s+(\d+)\s+(?:(App|Shader)\s+)?(update changed|state changed)\s*:\s*(.*)', re.I)
 _STARTED = re.compile(r'AppID\s+(\d+)\s+update started\s*:\s*download\s+(\d+)/(\d+)', re.I)
 # Uma transferência grande pode passar horas sem novo evento de estado.
 # É necessário observar o ÚLTIMO estado registrado, não somente os últimos 8 min.
@@ -165,7 +165,10 @@ def _content_events(roots: list[Path], now: float) -> dict[str, dict]:
             state = _EVENT.search(line)
             if not state:
                 continue
-            appid, event_type, status = state.groups()
+            appid, update_kind, event_type, status = state.groups()
+            # Shader updates não são necessariamente downloads do jogo.
+            if update_kind and update_kind.lower() == 'shader':
+                continue
             event = found.setdefault(appid, {"time": 0.0, "active": False,
                                                "completed": 0, "total": 0,
                                                "started": False})
