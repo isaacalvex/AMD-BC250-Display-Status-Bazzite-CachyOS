@@ -602,12 +602,12 @@ class Window(QMainWindow):
                 for i in range(6):
                     # O campo PCT antigo preserva compatibilidade.
                     # PCTF mede a precisão visual nova do ESP32.
-                    sample=(f'DL:1;PCTF:{65.41+i*0.01:.2f};PCT:65;'
+                    sample=(f'DL:1;UNIT:Mbps;PCTF:{65.41+i*0.01:.2f};PCT:65;'
                             f'SPEED:{28.4+i*0.1:.1f};NAME:TESTE STELLAR\n')
                     ser.write(sample.encode('ascii'))
                     ser.flush()
                     j.emit(f'Teste {i+1}/6: {65.41+i*0.01:.2f}% '
-                           f'| {28.4+i*0.1:.1f} MB/s')
+                           f'| {(28.4+i*0.1)*8:.1f} Mbps')
                     time.sleep(1)
                 ser.write(b'DL:0\n')
                 ser.flush()
@@ -623,8 +623,8 @@ class Window(QMainWindow):
             QMessageBox.information(
                 self,'Teste enviado',
                 'O teste foi enviado pelo USB. O ESP32 deveria ter exibido '
-                'TESTE STELLAR / 65,41% até 65,46% / 28,4 a 28,9 MB/s. '
-                'Se aparecer somente 65%, regrave o firmware atualizado. '
+                'TESTE STELLAR / 65,41% até 65,46% / 227,2 a 231,2 Mbps. '
+                'Se aparecer MB/s ou somente 65%, regrave o firmware atualizado. '
                 'Se nada mudar, verifique a porta USB e o protocolo.')
     self.run_job('Testar tela de download no ESP32',task,finished)
 
