@@ -196,7 +196,7 @@ def steam_status():
     else:
         speed = f"{info.speed_mb_s:.1f} MB/s" if info.speed_mb_s is not None else "indisponível"
         print(f"Resultado: {info.name} (AppID {info.appid}) "
-              f"{info.percent}% | {speed}", flush=True)
+              f"{info.percent}% | {speed} | etapa={info.phase}", flush=True)
         print("Origem:", info.source, flush=True)
 
 
@@ -218,7 +218,7 @@ def steam_watch(seconds=10):
                          if result.speed_mb_s is not None else 'indisponível')
                 print(f'[{i+1:02d}/{seconds}] AppID {result.appid} | '
                       f'{result.name} | {result.percent}% | {speed} | '
-                      f'{result.source}', flush=True)
+                      f'etapa={result.phase} | {result.source}', flush=True)
             else:
                 print(f'[{i+1:02d}/{seconds}] Sem download ativo | '
                       f'{cef.diagnostic.status}', flush=True)
@@ -283,8 +283,8 @@ def main():
                             time.monotonic() - last_steam_report >= 8):
                             taxa = (f'{download.speed_mb_s:.1f} MB/s'
                                     if download.speed_mb_s is not None else 'indisponível')
-                            print(f'Steam download ({download.source}): {nome} | '
-                                  f'{download.percent}% | {taxa}', flush=True)
+                            print(f'Steam tarefa ({download.source}): {nome} | '
+                                  f'{download.percent}% | {taxa} | etapa={download.phase}', flush=True)
                             if download.source.startswith('Steam CEF'):
                                 print('Fonte: Steam CEF ao vivo (percentual total estimado).',flush=True)
                             else:
@@ -296,7 +296,7 @@ def main():
                         download_anterior = True
                     elif download_anterior:
                         ser.write(b'DL:0\n')
-                        print('Steam download: sem transferência ativa; tela térmica.', flush=True)
+                        print('Steam: tarefa completa/sem instalação ativa; tela térmica.', flush=True)
                         last_steam_identity = None
                         last_steam_source = None
                         download_anterior = False
