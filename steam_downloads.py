@@ -127,7 +127,12 @@ _LOG_ACTIVITY_WINDOW = 6 * 3600
 
 
 def _content_events(roots: list[Path], now: float) -> dict[str, dict]:
-    """Último estado de download por AppID, incluindo contadores do log."""
+    """Estado real por AppID: distingue transferências do jogo e shader cache.
+
+    A Steam registra 'App update changed' e 'Shader update changed'
+    separadamente. A segunda categoria também baixa bytes pela rede e
+    aparece na tela Downloads da Steam, especialmente no Bazzite.
+    """
     found: dict[str, dict] = {}
     for root in roots:
         path = root / "logs/content_log.txt"
@@ -143,7 +148,8 @@ def _content_events(roots: list[Path], now: float) -> dict[str, dict]:
             if not stamp:
                 continue
             try:
-                when = datetime.strptime(stamp.group(1), "%Y-%m-%d %H:%M:%S").timestamp()
+                when = datetime.strptime(
+                    stamp.group(1), "%Y-%m-%d %H:%M:%S").timestamp()
             except ValueError:
                 continue
             if when > now + 60 or now - when > _LOG_ACTIVITY_WINDOW:
@@ -151,40 +157,54 @@ def _content_events(roots: list[Path], now: float) -> dict[str, dict]:
             started = _STARTED.search(line)
             if started:
                 appid = started.group(1)
-                event = found.setdefault(appid, {"time": 0.0, "active": False,
-                                                  "completed": 0, "total": 0,
-                                                  "started": False})
+                event = found.setdefault(appid, {
+                    "time": 0.0, "active": False, "kind": None,
+                    "app_active": False, "shader_active": False,
+                    "completed": 0, "total": 0, "started": False
+                })
                 if when >= event["time"]:
                     event["completed"] = int(started.group(2))
                     event["total"] = int(started.group(3))
                     event["started"] = True
-                    # update started é evidência de uma transferência iniciada,
-                    # mas pode anteceder "Running Update,Downloading".
                     event["time"] = when
                 continue
             state = _EVENT.search(line)
             if not state:
                 continue
             appid, update_kind, event_type, status = state.groups()
-            # Shader updates não são necessariamente downloads do jogo.
-            if update_kind and update_kind.lower() == 'shader':
-                continue
-            event = found.setdefault(appid, {"time": 0.0, "active": False,
-                                               "completed": 0, "total": 0,
-                                               "started": False})
+            event = found.setdefault(appid, {
+                "time": 0.0, "active": False, "kind": None,
+                "app_active": False, "shader_active": False,
+                "completed": 0, "total": 0, "started": False
+            })
             if when < event["time"]:
                 continue
-            status = status.lower()
+
+            lower = status.lower()
             if event_type.lower() == "update changed":
-                # Exemplo real: Running Update,Downloading,Staging,
-                # e depois Running Update,Staging, (download encerrado).
-                event["active"] = ("downloading" in status and
-                                   "stopping" not in status and
-                                   "paused" not in status)
-            elif any(word in status for word in ("update paused", "fully installed", "uninstalled")):
-                event["active"] = False
-            # O campo "Update Running" de state changed não equivale
-            # necessariamente a uma transferência (pode ser verificação).
+                kind = "shader" if (update_kind or "").lower() == "shader" else "app"
+                key = f"{kind}_active"
+                # Downloading significa transferência em curso; as fases
+                # Staging/Verifying/Committing sem Downloading NÃO significam.
+                event[key] = (
+                    "downloading" in lower and
+                    "stopping" not in lower and
+                    "paused" not in lower
+                )
+                if event[key]:
+                    event["kind"] = kind
+                elif event["kind"] == kind:
+                    event["kind"] = (
+                        "shader" if event["shader_active"] else
+                        "app" if event["app_active"] else None
+                    )
+            elif any(word in lower for word in (
+                    "update paused", "fully installed", "uninstalled", "suspended")):
+                event["app_active"] = False
+                event["shader_active"] = False
+                event["kind"] = None
+            event["active"] = bool(
+                event["app_active"] or event["shader_active"])
             event["time"] = when
     return found
 
@@ -263,9 +283,13 @@ class SteamDownloadTracker:
                                      completed, total, str(manifest))
                 # Prioriza app cujo progresso mudou, depois o que tem
                 # download flag e a atividade mais recente.
+                # Preferir a transferência observada MAIS RECENTEMENTE no
+                # content_log, não um manifesto antigo ainda "queued".
+                age = max(0, now - event["time"]) if event else 99999
+                freshness = max(0, 60 - min(60, age)) if log_active else 0
                 rank = (100 if delta > 0 else 0) + (
                     30 if flags_downloading else 0
-                ) + (20 if log_active else 0) + completed / total
+                ) + (20 if log_active else 0) + freshness + completed / total
                 candidates.append((rank, candidate))
 
         self.previous = updated
