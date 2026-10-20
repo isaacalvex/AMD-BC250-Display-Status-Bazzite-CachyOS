@@ -11,6 +11,7 @@ from pathlib import Path
 
 import serial
 from steam_downloads import SteamDownloadTracker
+from steam_cef import SteamCEFReader
 
 BAUDRATE = 115200
 INTERVALO = 1.0
@@ -116,7 +117,15 @@ def _nome_serial(nome):
 def steam_status():
     from steam_downloads import _ACF_FIELD, _content_events, _read
     tracker = SteamDownloadTracker()
-    info = tracker.scan()
+    cef = SteamCEFReader()
+    info_cef = cef.scan()
+    info_files = tracker.scan()
+    info = info_cef or info_files
+    print("Leitura CEF:", cef.diagnostic.status,flush=True)
+    if cef.diagnostic.port is not None:
+        print("Porta CEF:", cef.diagnostic.port,flush=True)
+    print("Fonte usada:", info.source if info else "nenhuma",flush=True)
+    cef.close()
     print("Diagnóstico Steam — nenhuma configuração será alterada.", flush=True)
     print("Bibliotecas Steam encontradas:", len(tracker.last_roots), flush=True)
     if not tracker.last_roots:
@@ -185,7 +194,9 @@ def steam_status():
 def main():
     print('Stellar Display - temperaturas + downloads Steam (Bazzite/CachyOS)', flush=True)
     tracker = SteamDownloadTracker()
+    cef = SteamCEFReader()
     last_steam_report = 0.0
+    last_steam_source = None
     last_steam_identity = None
     while rodando:
         serial_port = None
@@ -212,7 +223,12 @@ def main():
                         ser.write(pacote.encode('ascii'))
                         print(pacote.strip(), flush=True)
                     try:
-                        download = tracker.scan()
+                        # Preferir valores fornecidos diretamente pelo cliente Steam.
+                        # Sem CEF (recurso opcional), manter a leitura local
+                        # por manifests/logs, que pode atrasar.
+                        download = cef.scan()
+                        if download is None:
+                            download = tracker.scan()
                     except Exception as ex:
                         print(f'Steam: falha temporária na leitura: {ex}', flush=True)
                         download = None
@@ -225,17 +241,26 @@ def main():
                                   f'NAME:{nome}\n')
                         ser.write(pacote.encode('utf-8'))
                         if (last_steam_identity != (download.appid, download.percent) or
-                            time.monotonic() - last_steam_report >= 15):
+                            last_steam_source != download.source or
+                            time.monotonic() - last_steam_report >= 8):
                             taxa = (f'{download.speed_mb_s:.1f} MB/s'
                                     if download.speed_mb_s is not None else 'indisponível')
-                            print(f'Steam download: {nome} | {download.percent}% | {taxa}', flush=True)
+                            print(f'Steam download ({download.source}): {nome} | '
+                                  f'{download.percent}% | {taxa}', flush=True)
+                            if download.source.startswith('Steam CEF'):
+                                print('Fonte: Steam CEF ao vivo (percentual total estimado).',flush=True)
+                            else:
+                                print('AVISO: Steam CEF indisponível; progresso baseado em arquivos '
+                                      'pode não atualizar em tempo real.',flush=True)
                             last_steam_report = time.monotonic()
+                            last_steam_source = download.source
                             last_steam_identity = (download.appid, download.percent)
                         download_anterior = True
                     elif download_anterior:
                         ser.write(b'DL:0\n')
                         print('Steam download: sem transferência ativa; tela térmica.', flush=True)
                         last_steam_identity = None
+                        last_steam_source = None
                         download_anterior = False
 
                     ser.flush()
