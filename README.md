@@ -50,3 +50,9 @@ Capturas reais dependem da execução no hardware e serão adicionadas após val
 ## Atualizar o aplicativo
 
 Abra **Atualizações** no menu lateral. Clique em **ATUALIZAR** para consultar e baixar as alterações do repositório oficial. Depois clique em **APLICAR ATUALIZAÇÃO**. O app instala os novos arquivos, atualiza as bibliotecas Python do ambiente virtual e reinicia automaticamente. O progresso de transferência usa a porcentagem informada pelo Git; outras etapas aparecem em texto e nos logs, sem porcentagens artificiais. O recurso exige instalação pelo script oficial (que cria o clone Git) e rejeita atualizações com alterações locais ou histórico divergente.
+
+### ESP32 detectado, mas gravação falha por permissão USB
+
+Se o Bazzite ou CachyOS mostrar `Permission denied: '/dev/ttyACM0'`, isso indica que o firmware pode estar compilado, mas o usuário da sessão não tem acesso ao dispositivo. Em **Dispositivos USB → Corrigir permissões USB**, o aplicativo verifica dono, grupo e acesso de leitura/gravação antes de gravar. Para grupos `dialout` e `uucp`, ele pode solicitar autorização administrativa e incluir o usuário no grupo correto. **É necessário sair da sessão gráfica e entrar novamente** para ativar a nova associação de grupos. Não use `chmod 777` nas portas.
+
+Para diagnosticar pelo terminal: `ls -l /dev/ttyACM0` e `id -nG`. Antes de preparar ou gravar firmware, o aplicativo verifica permissões e apresenta uma explicação, evitando compilar sem possibilidade de acessar a placa. Depois que as permissões forem corrigidas, o firmware já compilado é reutilizado.
