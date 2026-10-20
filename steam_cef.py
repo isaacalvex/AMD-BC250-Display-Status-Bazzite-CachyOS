@@ -50,7 +50,8 @@ _JS = r"""(async () => {
   const overview = {};
   if (o) for (const k of keys) overview[k] = o[k];
   const items = (cache.items || []).slice(0,30).map(x => ({
-    appid:x.appid, active:x.active, paused:x.paused, name:x.name,
+    appid:x.appid, active:x.active, paused:x.paused,
+    completed:x.completed, name:x.name,
     downloaded_bytes:x.downloaded_bytes, total_bytes:x.total_bytes
   }));
   return {overview, items};
@@ -213,6 +214,7 @@ class SteamCEFReader:
         active_item=next((
             item for item in items
             if item.get("active") and not item.get("paused")
+            and not item.get("completed")
         ),None)
         try:
             appid=str(int(o.get("update_appid") or 0))
@@ -256,7 +258,10 @@ class SteamCEFReader:
             network_done=int(o.get("update_bytes_downloaded") or 0)
         except (TypeError,ValueError,OverflowError):
             network_total,network_done=0,0
-        installing=bool(network_total and network_done >= network_total)
+        installing=bool(
+            (network_total and network_done >= network_total) or
+            (network_total == 0 and (o.get("update_bytes_to_stage") or
+                                     o.get("update_bytes_to_process"))))
         # A velocidade de REDE durante a instalação é zero, mesmo quando
         # a transferência em disco está progredindo.
         if installing:
