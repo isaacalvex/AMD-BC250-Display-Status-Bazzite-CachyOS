@@ -118,20 +118,23 @@ def _steam_rate(roots: list[Path], now: float) -> float | None:
     return latest_value
 
 
+# Esses formatos foram conferidos com content_log.txt reais da Steam Linux.
 _EVENT = re.compile(r'AppID\s+(\d+)\s+(update changed|state changed)\s*:\s*(.*)', re.I)
 _STARTED = re.compile(r'AppID\s+(\d+)\s+update started\s*:\s*download\s+(\d+)/(\d+)', re.I)
-_LOG_ACTIVITY_WINDOW = 8 * 60
+# Uma transferência grande pode passar horas sem novo evento de estado.
+# É necessário observar o ÚLTIMO estado registrado, não somente os últimos 8 min.
+_LOG_ACTIVITY_WINDOW = 6 * 3600
 
 
 def _content_events(roots: list[Path], now: float) -> dict[str, dict]:
-    """Lê atividades recentes do content_log, mesmo com ACF desatualizado."""
+    """Último estado de download por AppID, incluindo contadores do log."""
     found: dict[str, dict] = {}
     for root in roots:
         path = root / "logs/content_log.txt"
         try:
             with path.open("rb") as stream:
                 stream.seek(0, os.SEEK_END)
-                stream.seek(max(0, stream.tell() - 256 * 1024))
+                stream.seek(max(0, stream.tell() - 2 * 1024 * 1024))
                 lines = stream.read().decode("utf-8", "replace").splitlines()
         except OSError:
             continue
@@ -148,29 +151,37 @@ def _content_events(roots: list[Path], now: float) -> dict[str, dict]:
             started = _STARTED.search(line)
             if started:
                 appid = started.group(1)
-                event = found.setdefault(appid, {"time": 0, "active": False,
-                                                   "completed": 0, "total": 0})
-                event["completed"] = int(started.group(2))
-                event["total"] = int(started.group(3))
-                event["time"] = max(when, event["time"])
+                event = found.setdefault(appid, {"time": 0.0, "active": False,
+                                                  "completed": 0, "total": 0,
+                                                  "started": False})
+                if when >= event["time"]:
+                    event["completed"] = int(started.group(2))
+                    event["total"] = int(started.group(3))
+                    event["started"] = True
+                    # update started é evidência de uma transferência iniciada,
+                    # mas pode anteceder "Running Update,Downloading".
+                    event["time"] = when
                 continue
             state = _EVENT.search(line)
             if not state:
                 continue
             appid, event_type, status = state.groups()
-            event = found.setdefault(appid, {"time": 0, "active": False,
-                                               "completed": 0, "total": 0})
+            event = found.setdefault(appid, {"time": 0.0, "active": False,
+                                               "completed": 0, "total": 0,
+                                               "started": False})
             if when < event["time"]:
                 continue
+            status = status.lower()
             if event_type.lower() == "update changed":
-                if "Downloading" in status and "Stopping" not in status:
-                    event["active"] = True
-                elif any(x in status for x in ("Stopping", "None", "Paused")):
-                    event["active"] = False
-            elif "Update Paused" in status or "Uninstalled" in status:
+                # Exemplo real: Running Update,Downloading,Staging,
+                # e depois Running Update,Staging, (download encerrado).
+                event["active"] = ("downloading" in status and
+                                   "stopping" not in status and
+                                   "paused" not in status)
+            elif any(word in status for word in ("update paused", "fully installed", "uninstalled")):
                 event["active"] = False
-            elif "Downloading" in status:
-                event["active"] = True
+            # O campo "Update Running" de state changed não equivale
+            # necessariamente a uma transferência (pode ser verificação).
             event["time"] = when
     return found
 
@@ -205,7 +216,11 @@ class SteamDownloadTracker:
                 completed = _number(fields.get("BytesDownloaded", "0"))
                 flags = _number(fields.get("StateFlags", "0"))
                 event = events.get(appid)
-                if (not total or completed > total) and event and event["total"]:
+                if event and event["total"] and (
+                        not total or completed >= total or
+                        event["completed"] > completed):
+                    # O content_log registra o progresso inicial real mesmo
+                    # antes de Steam salvar os campos do appmanifest.
                     total = event["total"]
                     completed = event["completed"]
                 key = (str(root), appid)
@@ -214,11 +229,16 @@ class SteamDownloadTracker:
 
                 if not total or completed >= total:
                     continue
-                if flags & _PAUSED and not (event and event["active"]):
+                # 256=UpdateRunning pode indicar SOMENTE instalação em disco.
+                # Downloading (1048576) ou evento de log são preferíveis.
+                # Para instalações novas, o log pode atualizar antes do ACF.
+                log_active = bool(event and event["active"])
+                flags_downloading = bool(flags & 1048576)
+                flags_running = bool(flags & 256)
+                if not (log_active or flags_downloading or
+                        (flags_running and speed_from_log is not None)):
                     continue
-                # O estado da transferência pode estar atualizado no log,
-                # mesmo quando o appmanifest ainda não foi salvo pela Steam.
-                if not (flags & (256 | 1048576) or (event and event["active"])):
+                if flags & _PAUSED and not log_active:
                     continue
 
                 # Apenas contadores Steam para porcentagem. Não mistura
@@ -241,8 +261,8 @@ class SteamDownloadTracker:
                 # Prioriza app cujo progresso mudou, depois o que tem
                 # download flag e a atividade mais recente.
                 rank = (100 if delta > 0 else 0) + (
-                    30 if flags & 1048576 else 0
-                ) + (20 if event and event["active"] else 0) + completed / total
+                    30 if flags_downloading else 0
+                ) + (20 if log_active else 0) + completed / total
                 candidates.append((rank, candidate))
 
         self.previous = updated
