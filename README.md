@@ -51,6 +51,18 @@ Capturas reais dependem da execução no hardware e serão adicionadas após val
 
 Abra **Atualizações** no menu lateral. Clique em **ATUALIZAR** para consultar e baixar as alterações do repositório oficial. Depois clique em **APLICAR ATUALIZAÇÃO**. O app instala os novos arquivos, atualiza as bibliotecas Python do ambiente virtual e reinicia automaticamente. O progresso de transferência usa a porcentagem informada pelo Git; outras etapas aparecem em texto e nos logs, sem porcentagens artificiais. O recurso exige instalação pelo script oficial (que cria o clone Git) e rejeita atualizações com alterações locais ou histórico divergente.
 
+### Corrigir porta USB no Bazzite (Fedora Atomic)
+
+Ao instalar no **Bazzite**, o grupo `dialout` pode existir em `/usr/lib/group` e não em `/etc/group`. Nesse caso, simplesmente adicionar o usuário a `dialout` não resolve o acesso serial. O botão **Dispositivos USB → Corrigir permissões USB** agora:
+
+1. Verifica se o ESP32 está conectado à porta e identifica o grupo real da porta.
+2. Solicita sua confirmação e autenticação administrativa via Polkit.
+3. Registra o grupo existente em `/usr/lib/group` no arquivo `/etc/group` **somente se estiver ausente**, com backup anterior.
+4. Adiciona a conta da sessão ao grupo `dialout` ou `uucp`, conforme o dispositivo.
+5. Registra o resultado no painel de logs e informa que é necessário **encerrar a sessão e entrar novamente** ou reiniciar.
+
+Após reiniciar, verifique `id -nG` e teste **Dispositivos USB → Testar porta**. Se o grupo ainda não aparecer, não tente repetir a alteração indiscriminadamente: confira os logs e a configuração. Em sistemas sem Polkit, use a [documentação do Bazzite](https://docs.bazzite.gg/Advanced/add-user-to-group/) para o procedimento manual. **Nunca use `chmod 777` para conceder acesso ao dispositivo.**
+
 ### ESP32 detectado, mas gravação falha por permissão USB
 
 Se o Bazzite ou CachyOS mostrar `Permission denied: '/dev/ttyACM0'`, isso indica que o firmware pode estar compilado, mas o usuário da sessão não tem acesso ao dispositivo. Em **Dispositivos USB → Corrigir permissões USB**, o aplicativo verifica dono, grupo e acesso de leitura/gravação antes de gravar. Para grupos `dialout` e `uucp`, ele pode solicitar autorização administrativa e incluir o usuário no grupo correto. **É necessário sair da sessão gráfica e entrar novamente** para ativar a nova associação de grupos. Não use `chmod 777` nas portas.
