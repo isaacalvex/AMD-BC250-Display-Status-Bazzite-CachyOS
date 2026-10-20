@@ -25,9 +25,9 @@ _JS = r"""(async () => {
   const d = window.SteamClient && window.SteamClient.Downloads;
   if (!d) return {error: "SteamClient.Downloads indisponivel"};
   if (!window.__stellarDownloadReader) {
-    const cache = window.__stellarDownloadReader = {overview:null, items:[]};
+    const cache = window.__stellarDownloadReader = {overview:null, items:[], overviewTime:0};
     if (typeof d.RegisterForDownloadOverview === 'function')
-      d.RegisterForDownloadOverview(v => {cache.overview = v;});
+      d.RegisterForDownloadOverview(v => {cache.overview = v; cache.overviewTime = Date.now();});
     if (typeof d.RegisterForDownloadItems === 'function')
       d.RegisterForDownloadItems((active,items) => {
         cache.items = Array.isArray(items) ? items : [];
@@ -36,7 +36,7 @@ _JS = r"""(async () => {
   const cache = window.__stellarDownloadReader;
   let o = cache.overview;
   if (typeof d.GetDownloadOverview === 'function') {
-    try { o = await d.GetDownloadOverview() || o; } catch (e) {}
+    try { const latest = await d.GetDownloadOverview(); if (latest) { o = latest; cache.overviewTime = Date.now(); } } catch (e) {}
   }
   // A lista de itens também contém bytes por AppID. Algumas versões
   // do Steam notificam primeiro a lista e depois a visão geral.
@@ -54,7 +54,7 @@ _JS = r"""(async () => {
     completed:x.completed, name:x.name,
     downloaded_bytes:x.downloaded_bytes, total_bytes:x.total_bytes
   }));
-  return {overview, items};
+  return {overview, items, overviewAgeMs: cache.overviewTime ? Date.now()-cache.overviewTime : null};
 })()"""
 
 
@@ -250,7 +250,12 @@ class SteamCEFReader:
             return None
         rate=o.get("update_network_bytes_per_second")
         try:
-            speed=max(0,float(rate))/1_000_000 if rate is not None else None
+            age=data.get("overviewAgeMs")
+            fresh=(age is None or 0 <= float(age) <= 3500)
+            # CEF ao vivo deve ter callbacks recentes; nunca apresentar
+            # uma taxa antiga como velocidade instantânea.
+            speed=(max(0,float(rate))/1_000_000
+                   if rate is not None and fresh else None)
         except (TypeError,ValueError,OverflowError):
             speed=None
         try:
