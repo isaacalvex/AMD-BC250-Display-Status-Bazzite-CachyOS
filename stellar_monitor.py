@@ -14,7 +14,7 @@ from steam_downloads import SteamDownloadTracker
 from steam_cef import SteamCEFReader
 
 BAUDRATE = 115200
-INTERVALO = 1.0
+INTERVALO = 1.0  # Segundo: uma leitura e um envio em cada ciclo.
 rodando = True
 
 
@@ -112,6 +112,15 @@ def _nome_serial(nome):
     while len(nome.encode('utf-8')) > 140:
         nome = nome[:-1]
     return nome or 'Jogo'
+
+
+def pacote_download(download):
+    """Protocolo USB genérico: nunca depende do título ou AppID de um jogo."""
+    nome = _nome_serial(download.name)
+    velocidade = (f'{download.speed_mb_s:.1f}'
+                  if download.speed_mb_s is not None else '-1')
+    return (f'DL:1;PCT:{download.percent};SPEED:{velocidade};'
+            f'NAME:{nome}\n').encode('utf-8')
 
 
 def steam_status():
@@ -217,6 +226,7 @@ def main():
         download_anterior = False
         with serial_port as ser:
             while rodando:
+                inicio_ciclo = time.monotonic()
                 try:
                     cpu, gpu = ler_cpu(), ler_gpu()
                     if cpu is not None and gpu is not None:
@@ -240,11 +250,7 @@ def main():
 
                     if download is not None:
                         nome = _nome_serial(download.name)
-                        velocidade = (f'{download.speed_mb_s:.1f}'
-                                      if download.speed_mb_s is not None else '-1')
-                        pacote = (f'DL:1;PCT:{download.percent};SPEED:{velocidade};'
-                                  f'NAME:{nome}\n')
-                        ser.write(pacote.encode('utf-8'))
+                        ser.write(pacote_download(download))
                         if (last_steam_identity != (download.appid, download.percent) or
                             last_steam_source != download.source or
                             time.monotonic() - last_steam_report >= 8):
@@ -272,7 +278,10 @@ def main():
                 except (OSError, serial.SerialException) as ex:
                     print(f'USB desconectado: {ex}', flush=True)
                     break
-                time.sleep(INTERVALO)
+                # Cadência baseada em relógio monotônico: a duração
+                # da leitura não se SOMA a cada intervalo de um segundo.
+                decorrido = time.monotonic() - inicio_ciclo
+                time.sleep(max(0.0, INTERVALO - decorrido))
 
 
 if __name__ == '__main__':
