@@ -137,3 +137,7 @@ Quando a Steam CEF não está disponível, o app continua funcionando via arquiv
 
 Ao usar **Atualizações → ATUALIZAR → APLICAR ATUALIZAÇÃO**, o ambiente virtual instala automaticamente a biblioteca `websocket-client` e reinicia o serviço de envio. **Não é necessário atualizar o firmware ESP32 novamente.**
 
+
+### Downloads de shaders no Bazzite
+
+A Steam também pode baixar conteúdo de shaders de um jogo e registrar essa transferência como `Shader update changed : Running Update,Downloading,Staging,`. O Stellar agora reconhece esse tipo de transferência, incluindo pausas, interrupções e retomadas. No diagnóstico, `tipo=shader` indica uma transferência de shaders; `tipo=app` indica arquivos do próprio aplicativo. **Não é necessário ativar CEF para identificar esses downloads**. O CEF continua sendo opcional para obter métricas ao vivo mais próximas da interface Steam. Sem ele, a porcentagem calculada pelo manifesto pode atualizar somente em checkpoints e não deve ser confundida com o progresso total exibido pela Steam.
